@@ -23,11 +23,13 @@ import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 
 import { parseTurnDiffFilesFromNumstat } from "../../checkpointing/Diffs.ts";
 import {
+  checkpointRefForRevertBase,
   checkpointRefForThreadTurn,
   resolveThreadWorkspaceCwd,
 } from "../../checkpointing/Utils.ts";
 import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import { ProviderValidationError } from "../../provider/Errors.ts";
 import { CheckpointReactor, type CheckpointReactorShape } from "../Services/CheckpointReactor.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -753,6 +755,14 @@ const make = Effect.gen(function* () {
 
     yield* providerService.assertConversationRollbackSupported(event.payload.threadId);
 
+    // Prior checkpoints can miss edits made since the last turn. Keep a recovery
+    // snapshot until both the filesystem and provider history have been rewound.
+    const revertBaseRef = checkpointRefForRevertBase(event.payload.threadId);
+    yield* checkpointStore.captureCheckpoint({
+      cwd: sessionRuntime.value.cwd,
+      checkpointRef: revertBaseRef,
+    });
+
     const restored = yield* checkpointStore.restoreCheckpoint({
       cwd: sessionRuntime.value.cwd,
       checkpointRef: targetCheckpointRef,
@@ -774,13 +784,32 @@ const make = Effect.gen(function* () {
 
     const rolledBackTurns = Math.max(0, currentTurnCount - event.payload.turnCount);
     if (rolledBackTurns > 0) {
-      yield* providerService.rollbackConversation({
-        threadId: sessionRuntime.value.threadId,
-        numTurns: rolledBackTurns,
-      });
+      yield* providerService
+        .rollbackConversation({
+          threadId: sessionRuntime.value.threadId,
+          numTurns: rolledBackTurns,
+        })
+        .pipe(
+          Effect.tapError(() =>
+            Effect.gen(function* () {
+              const recovered = yield* checkpointStore.restoreCheckpoint({
+                cwd: sessionRuntime.value.cwd,
+                checkpointRef: revertBaseRef,
+                fallbackToHead: false,
+              });
+              if (!recovered) {
+                return yield* new ProviderValidationError({
+                  operation: "checkpoint.revert.recover",
+                  issue: `Could not restore pre-revert files from ${revertBaseRef}.`,
+                });
+              }
+              yield* workspaceEntries.refresh(sessionRuntime.value.cwd);
+            }),
+          ),
+        );
     }
 
-    const staleCheckpointRefs: Array<CheckpointRef> = [];
+    const staleCheckpointRefs: Array<CheckpointRef> = [revertBaseRef];
     for (const checkpoint of thread.checkpoints) {
       if (checkpoint.checkpointTurnCount > event.payload.turnCount) {
         staleCheckpointRefs.push(checkpoint.checkpointRef);

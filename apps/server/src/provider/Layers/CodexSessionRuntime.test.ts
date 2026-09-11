@@ -18,6 +18,7 @@ import {
   isRecoverableThreadResumeError,
   makeMemoryConsolidationNotificationFilter,
   openCodexThread,
+  rollbackCodexThread,
   toMcpElicitationResponse,
 } from "./CodexSessionRuntime.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
@@ -946,6 +947,123 @@ describe("openCodexThread", () => {
 
       NodeAssert.ok(isCodexAppServerRequestError(error));
       NodeAssert.equal(error.errorMessage, "timed out waiting for server");
+    }),
+  );
+});
+
+describe("rollbackCodexThread", () => {
+  const paginatedError = new CodexErrors.CodexAppServerRequestError({
+    code: -32600,
+    errorMessage: "paginated threads do not support thread/rollback",
+    method: "thread/rollback",
+  });
+
+  it.effect("preserves legacy rollback without requesting paginated history", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* rollbackCodexThread(
+        {
+          request: (method, params) => {
+            NodeAssert.equal(method, "thread/rollback");
+            NodeAssert.deepStrictEqual(params, { threadId: "legacy", numTurns: 2 });
+            return Effect.succeed(makeThreadOpenResponse("legacy"));
+          },
+          raw: { request: () => Effect.die("Legacy rollback must not use pagination") },
+        },
+        "legacy",
+        2,
+      );
+      NodeAssert.deepStrictEqual(snapshot, { threadId: "legacy", turns: [] });
+    }),
+  );
+
+  it.effect("reverts paginated history before the oldest removed turn across pages", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ method: string; params: unknown }> = [];
+      let page = 0;
+      const snapshot = yield* rollbackCodexThread(
+        {
+          request: () => Effect.fail(paginatedError),
+          raw: {
+            request: (method, params) => {
+              calls.push({ method, params });
+              if (method === "thread/turns/list") {
+                page += 1;
+                return Effect.succeed(
+                  page === 1
+                    ? { data: [{ id: "turn-5" }, { id: "turn-4" }], nextCursor: "older" }
+                    : { data: [{ id: "turn-3" }, { id: "turn-2" }], nextCursor: "oldest" },
+                );
+              }
+              NodeAssert.equal(method, "thread/revert");
+              return Effect.succeed({ thread: { id: "paginated", turns: [] } });
+            },
+          },
+        },
+        "paginated",
+        3,
+      );
+      NodeAssert.deepStrictEqual(calls, [
+        {
+          method: "thread/turns/list",
+          params: {
+            threadId: "paginated",
+            limit: 3,
+            sortDirection: "desc",
+            itemsView: "notLoaded",
+          },
+        },
+        {
+          method: "thread/turns/list",
+          params: {
+            threadId: "paginated",
+            limit: 1,
+            sortDirection: "desc",
+            itemsView: "notLoaded",
+            cursor: "older",
+          },
+        },
+        { method: "thread/revert", params: { threadId: "paginated", beforeTurnId: "turn-3" } },
+      ]);
+      NodeAssert.deepStrictEqual(snapshot, { threadId: "paginated", turns: [] });
+    }),
+  );
+
+  it.effect("does not reinterpret other rollback failures as pagination", () =>
+    Effect.gen(function* () {
+      const failure = new CodexErrors.CodexAppServerRequestError({
+        code: -32603,
+        errorMessage: "rollback already in progress for this thread",
+      });
+      const error = yield* rollbackCodexThread(
+        {
+          request: () => Effect.fail(failure),
+          raw: {
+            request: () => Effect.die("An unrelated failure must not trigger another mutation"),
+          },
+        },
+        "busy",
+        1,
+      ).pipe(Effect.flip);
+      NodeAssert.strictEqual(error, failure);
+    }),
+  );
+
+  it.effect("refuses to revert when the requested turn boundary is missing", () =>
+    Effect.gen(function* () {
+      const error = yield* rollbackCodexThread(
+        {
+          request: () => Effect.fail(paginatedError),
+          raw: {
+            request: (method) => {
+              NodeAssert.equal(method, "thread/turns/list");
+              return Effect.succeed({ data: [{ id: "only-turn" }], nextCursor: null });
+            },
+          },
+        },
+        "short-history",
+        2,
+      ).pipe(Effect.flip);
+      NodeAssert.match(error.message, /Cannot locate.*2.*turn/);
     }),
   );
 });

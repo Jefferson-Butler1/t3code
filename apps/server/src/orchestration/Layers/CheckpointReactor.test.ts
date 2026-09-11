@@ -91,8 +91,8 @@ function createProviderServiceHarness(
 ) {
   const now = "2026-01-01T00:00:00.000Z";
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
-  const rollbackConversation = vi.fn(
-    (_input: { readonly threadId: ThreadId; readonly numTurns: number }) => Effect.void,
+  const rollbackConversation = vi.fn<ProviderServiceShape["rollbackConversation"]>(
+    () => Effect.void,
   );
   const assertConversationRollbackSupported = vi.fn<
     ProviderServiceShape["assertConversationRollbackSupported"]
@@ -1679,6 +1679,75 @@ describe("CheckpointReactor", () => {
       );
       expect(harness.provider.rollbackConversation).not.toHaveBeenCalled();
       expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"), "utf8")).toBe("v3\n");
+      expect(gitRefExists(harness.cwd, checkpointRefForThreadTurn(threadId, 2))).toBe(true);
+    }),
+  );
+
+  effectIt.effect("restores current files when provider conversation rollback fails", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const threadId = ThreadId.make("thread-1");
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const attempted = yield* Deferred.make<void>();
+      harness.provider.rollbackConversation.mockImplementation(() =>
+        Deferred.succeed(attempted, undefined).pipe(
+          Effect.andThen(
+            Effect.fail(
+              new ProviderValidationError({
+                operation: "ProviderService.rollbackConversation",
+                issue: "paginated threads do not support thread/rollback",
+              }),
+            ),
+          ),
+        ),
+      );
+      for (const turnCount of [1, 2]) {
+        yield* harness.engine.dispatch({
+          type: "thread.turn.diff.complete",
+          commandId: CommandId.make(`cmd-failed-revert-diff-${turnCount}`),
+          threadId,
+          turnId: asTurnId(`turn-${turnCount}`),
+          completedAt: createdAt,
+          checkpointRef: checkpointRefForThreadTurn(threadId, turnCount),
+          status: "ready",
+          files: [],
+          checkpointTurnCount: turnCount,
+          createdAt,
+        });
+      }
+      NodeFS.writeFileSync(NodePath.join(harness.cwd, "README.md"), "uncommitted edit\n");
+      NodeFS.writeFileSync(NodePath.join(harness.cwd, "local-note.txt"), "new local file\n");
+      const before = (yield* Effect.promise(harness.readModel)).threads.find(
+        (thread) => thread.id === threadId,
+      );
+      yield* harness.engine.dispatch({
+        type: "thread.checkpoint.revert",
+        commandId: CommandId.make("cmd-provider-revert-failure"),
+        threadId,
+        turnCount: 1,
+        createdAt,
+      });
+      yield* Deferred.await(attempted);
+      yield* Effect.promise(harness.drain);
+      const after = (yield* Effect.promise(harness.readModel)).threads.find(
+        (thread) => thread.id === threadId,
+      );
+      expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"), "utf8")).toBe(
+        "uncommitted edit\n",
+      );
+      expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "local-note.txt"), "utf8")).toBe(
+        "new local file\n",
+      );
+      expect(after?.checkpoints).toEqual(before?.checkpoints);
+      expect(after?.latestTurn).toEqual(before?.latestTurn);
+      expect(after?.activities).toContainEqual(
+        expect.objectContaining({
+          kind: "checkpoint.revert.failed",
+          payload: expect.objectContaining({
+            detail: expect.stringContaining("paginated threads"),
+          }),
+        }),
+      );
       expect(gitRefExists(harness.cwd, checkpointRefForThreadTurn(threadId, 2))).toBe(true);
     }),
   );
