@@ -21,13 +21,13 @@ When upstream covers the behavior, remove `codex-paginated-revert.patch` from `s
 
 ## macOS installation and signing
 
-The downloadable build targets Apple Silicon, including boromir and frodo. It is unsigned, matching upstream's macOS preview build process. Download the DMG from this fork's release, verify it against `SHA256SUMS`, quit T3 normally, and replace the application. Keep the previous app if you want a local rollback.
+The downloadable build targets Apple Silicon Macs. It is unsigned, matching upstream's macOS preview build process. Download the DMG from this fork's release, verify it against `SHA256SUMS`, quit T3 normally, and replace the application. Keep the previous app if you want a local rollback.
 
 These builds are published daily but are **not installed automatically**. Native macOS automatic updates require a Developer ID signing identity; the unsigned fork does not configure a native update feed. No Apple certificate, notarization secret, private relay key or npm token is needed to build it. Public T3 Connect configuration comes from upstream `.env.example`.
 
 Unsigned builds may require macOS permission approval, and native passkey support requires proper signing and associated-domain entitlements. Use the official build when those capabilities are required. Adding signed distribution later should use this fork's update repository, never upstream's feed.
 
-Each machine has its own installed app and backend. A client connected from boromir to frodo executes server code on frodo; installing only the boromir client does not patch frodo's backend. The GitHub DMG replaces a desktop-managed backend with its app. Upstream's separate headless `t3` service updates through npm and is not covered by these desktop releases.
+Each machine has its own installed app and backend. A client connected to a remote environment executes server code there; installing only the local client does not patch the remote backend. The GitHub DMG replaces a desktop-managed backend with its app. Upstream's separate headless `t3` service updates through npm and is not covered by these desktop releases.
 
 ## Maintainer checks
 
