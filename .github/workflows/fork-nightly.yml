@@ -48,13 +48,13 @@ jobs:
           FORCE: ${{ inputs.force || false }}
         run: |
           set -euo pipefail
-          options=()
-          if [[ "$FORCE" == "true" ]]; then options+=(--force); fi
+          set --
+          if [[ "$FORCE" == "true" ]]; then set -- --force; fi
           python3 control/.fork/prepare.py \
             --source "$GITHUB_WORKSPACE/source" \
             --repository "$GITHUB_REPOSITORY" \
             --run-number "$GITHUB_RUN_NUMBER" \
-            "${options[@]}"
+            "$@"
 
       - name: Setup Vite+
         if: steps.prepare.outputs.changed == 'true'
