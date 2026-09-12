@@ -38,7 +38,7 @@ jobs:
           path: control
           fetch-depth: 0
 
-      - name: Test patch replay
+      - name: Test patch replay and macOS updater
         run: python3 -m unittest discover -s control/.fork -p '*_test.py'
 
       - name: Assemble the latest upstream nightly
@@ -142,8 +142,8 @@ jobs:
           import os, pathlib
           pathlib.Path('release-notes.md').write_text(
               f"Personal fork of upstream `{os.environ['UPSTREAM_TAG']}` with the patch series from `fork-maintenance`.\n\n"
-              "Apple Silicon macOS build. Unsigned: download and install manually; native automatic installation is disabled. "
-              "An official T3 installer replaces this fork when the patch is no longer needed.\n\n"
+              "Apple Silicon macOS build. Unsigned: install manually or use the fork's macOS LaunchAgent updater; native automatic installation is disabled. "
+              "See `.fork/README.md` on `fork-maintenance` for setup and removal.\n\n"
               "Focused server tests, typecheck, lint, and the desktop build passed. "
               "See `fork-build.json` for upstream and patch provenance and `SHA256SUMS` to verify the download.\n")
           PY
