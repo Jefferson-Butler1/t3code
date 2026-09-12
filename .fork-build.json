@@ -1,0 +1,16 @@
+{
+  "upstream_tag": "v0.0.41-nightly.20260911.1564",
+  "upstream_commit": "b3ed07fb39fb795b9d2c74644e4b0a7f12392ad5",
+  "control_commit": "308c70ce3d240ee5e6adbaacd16572854af0d554",
+  "version": "0.0.41-nightly.20260912.100003",
+  "patches": [
+    {
+      "patch": "codex-paginated-revert.patch",
+      "status": "applied"
+    },
+    {
+      "patch": "explicit-update-feed.patch",
+      "status": "applied"
+    }
+  ]
+}
