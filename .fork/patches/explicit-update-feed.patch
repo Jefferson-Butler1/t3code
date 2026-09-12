@@ -1,0 +1,29 @@
+From eac26d46f90b6f8ee13613c73b78980cf184a3a0 Mon Sep 17 00:00:00 2001
+From: Jefferson-Butler1 <jefferson.butler@icloud.com>
+Date: Fri, 11 Sep 2026 17:30:24 -0700
+Subject: [PATCH] build(fork): disable inferred update feeds unless explicitly
+ configured
+
+Set an explicit null publisher so unsigned fork builds cannot silently inherit the upstream repository. An explicit update repository still overrides this default.
+
+Configuration-only patch. The fork build verifies that app-update.yml is absent from the packaged app.
+---
+ scripts/build-desktop-artifact.ts | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/scripts/build-desktop-artifact.ts b/scripts/build-desktop-artifact.ts
+index 44d5f0ab1..76025a6b3 100644
+--- a/scripts/build-desktop-artifact.ts
++++ b/scripts/build-desktop-artifact.ts
+@@ -2666,6 +2666,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+   arch?: typeof BuildArch.Type,
+ ) {
+   const buildConfig: Record<string, unknown> = {
++    // Prevent electron-builder from inferring an upstream feed when none is configured.
++    publish: null,
+     appId: DESKTOP_APP_ID,
+     productName: resolveDesktopProductName(version),
+     artifactName: "T3-Code-${version}-${arch}.${ext}",
+-- 
+2.53.0
+

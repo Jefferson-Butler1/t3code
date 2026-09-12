@@ -1,0 +1,159 @@
+name: Fork Nightly
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build even if the upstream nightly and patch series are unchanged
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    if: github.repository == 'Jefferson-Butler1/t3code'
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      GIT_AUTHOR_NAME: github-actions[bot]
+      GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      GIT_COMMITTER_NAME: github-actions[bot]
+      GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+    steps:
+      - name: Check out fork maintenance
+        uses: actions/checkout@v6
+        with:
+          ref: fork-maintenance
+          path: control
+          fetch-depth: 0
+
+      - name: Test patch replay
+        run: python3 -m unittest discover -s control/.fork -p '*_test.py'
+
+      - name: Assemble the latest upstream nightly
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          options=()
+          if [[ "$FORCE" == "true" ]]; then options+=(--force); fi
+          python3 control/.fork/prepare.py \
+            --source "$GITHUB_WORKSPACE/source" \
+            --repository "$GITHUB_REPOSITORY" \
+            --run-number "$GITHUB_RUN_NUMBER" \
+            "${options[@]}"
+
+      - name: Setup Vite+
+        if: steps.prepare.outputs.changed == 'true'
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: source/package.json
+          run-install: false
+          cache: false
+
+      - name: Install desktop and verification dependencies
+        if: steps.prepare.outputs.changed == 'true'
+        working-directory: source
+        run: vp install --frozen-lockfile --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts... --filter=./oxlint-plugin-t3code
+
+      - name: Verify the patch against current upstream
+        if: steps.prepare.outputs.changed == 'true'
+        working-directory: source
+        run: |
+          set -euo pipefail
+          vp test run apps/server/src/provider/Layers/CodexSessionRuntime.test.ts apps/server/src/orchestration/Layers/CheckpointReactor.test.ts
+          (cd apps/server && vp run typecheck)
+          vp lint apps/server/src/checkpointing/Utils.ts apps/server/src/orchestration/Layers/CheckpointReactor.ts apps/server/src/orchestration/Layers/CheckpointReactor.test.ts apps/server/src/provider/Layers/CodexSessionRuntime.ts apps/server/src/provider/Layers/CodexSessionRuntime.test.ts
+          git diff --exit-code
+
+      - name: Cache resource monitor
+        if: steps.prepare.outputs.changed == 'true'
+        id: resource_monitor_cache
+        uses: actions/cache@v6
+        with:
+          path: source/native/resource-monitor/target/aarch64-apple-darwin/release/t3-resource-monitor
+          key: fork-resource-monitor-arm64-${{ hashFiles('source/native/resource-monitor/Cargo.lock', 'source/native/resource-monitor/Cargo.toml', 'source/native/resource-monitor/src/**') }}
+
+      - name: Setup Rust
+        if: steps.prepare.outputs.changed == 'true' && steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Set the fork version and public configuration
+        if: steps.prepare.outputs.changed == 'true'
+        working-directory: source
+        env:
+          VERSION: ${{ steps.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/update-release-package-versions.ts "$VERSION"
+          cp .env.example .env
+
+      - name: Build Apple Silicon DMG
+        if: steps.prepare.outputs.changed == 'true'
+        working-directory: source
+        env:
+          VERSION: ${{ steps.prepare.outputs.version }}
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: ${{ steps.resource_monitor_cache.outputs.cache-hit == 'true' }}
+        run: |
+          set -euo pipefail
+          # Unsigned macOS builds cannot use Squirrel's native updater.
+          env -u GITHUB_REPOSITORY -u T3CODE_DESKTOP_UPDATE_REPOSITORY \
+            vp run dist:desktop:artifact --platform mac --target dmg --arch arm64 \
+            --build-version "$VERSION" --verbose
+          shopt -s nullglob
+          dmgs=(release/*-arm64.dmg)
+          if (( ${#dmgs[@]} != 1 )); then
+            echo "Expected exactly one Apple Silicon DMG." >&2
+            exit 1
+          fi
+          python3 ../control/.fork/smoke.py release "$VERSION"
+          cp .fork-build.json release/fork-build.json
+          (cd release && shasum -a 256 -- *.dmg fork-build.json > SHA256SUMS)
+
+      - name: Promote verified source and publish the build
+        if: steps.prepare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+          SOURCE_COMMIT: ${{ steps.prepare.outputs.source_commit }}
+          PREVIOUS_COMMIT: ${{ steps.prepare.outputs.previous_commit }}
+          UPSTREAM_TAG: ${{ steps.prepare.outputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+          git -C control push origin \
+            "--force-with-lease=refs/heads/patched-nightly:$PREVIOUS_COMMIT" \
+            "$SOURCE_COMMIT:refs/heads/patched-nightly"
+          python3 - <<'PY'
+          import os, pathlib
+          pathlib.Path('release-notes.md').write_text(
+              f"Personal fork of upstream `{os.environ['UPSTREAM_TAG']}` with the patch series from `fork-maintenance`.\n\n"
+              "Apple Silicon macOS build. Unsigned: download and install manually; native automatic installation is disabled. "
+              "An official T3 installer replaces this fork when the patch is no longer needed.\n\n"
+              "Focused server tests, typecheck, lint, and the desktop build passed. "
+              "See `fork-build.json` for upstream and patch provenance and `SHA256SUMS` to verify the download.\n")
+          PY
+          gh release create "fork-v$VERSION" source/release/*-arm64.dmg \
+            source/release/fork-build.json source/release/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --target "$SOURCE_COMMIT" \
+            --prerelease --title "Patched Nightly $VERSION" --notes-file release-notes.md
+          printf '### Published fork build\n\n[Download %s](https://github.com/%s/releases/tag/fork-v%s)\n' \
+            "$VERSION" "$GITHUB_REPOSITORY" "$VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Unchanged
+        if: steps.prepare.outputs.changed == 'false'
+        run: echo 'The latest upstream nightly and this patch series already have a successful release.' >> "$GITHUB_STEP_SUMMARY"
