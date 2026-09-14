@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import unittest
 
-from prepare import apply_patches
+from prepare import apply_patches, preserve_workflows
 
 
 class PatchReplayTest(unittest.TestCase):
@@ -55,6 +55,34 @@ class PatchReplayTest(unittest.TestCase):
         upstream = self.git('rev-parse', 'HEAD')
         self.assertEqual(apply_patches(self.repo, [self.patch]), [{'patch': 'fix.patch', 'status': 'already-upstream'}])
         self.assertEqual(self.git('rev-parse', 'HEAD'), upstream)
+
+    def test_publication_keeps_existing_workflows_while_updating_application_source(self):
+        workflows = self.repo / '.github/workflows'
+        workflows.mkdir(parents=True)
+        (workflows / 'release.yml').write_text('existing release workflow\n')
+        (workflows / 'retained.yml').write_text('retained workflow\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'previously published workflows')
+        published = self.git('rev-parse', 'HEAD')
+        (workflows / 'release.yml').write_text('changed upstream release workflow\n')
+        (workflows / 'retained.yml').unlink()
+        (workflows / 'new.yml').write_text('new upstream workflow\n')
+        (self.repo / 'file.txt').write_text('updated upstream application\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'latest upstream')
+        preserve_workflows(self.repo, published)
+        self.assertEqual(self.git('diff', '--cached', published, '--', '.github/workflows'), '')
+        self.assertEqual((self.repo / 'file.txt').read_text(), 'updated upstream application\n')
+        self.assertFalse((workflows / 'new.yml').exists())
+
+    def test_preserving_unchanged_workflows_does_not_stage_changes(self):
+        workflows = self.repo / '.github/workflows'
+        workflows.mkdir(parents=True)
+        (workflows / 'release.yml').write_text('existing release workflow\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'published workflows')
+        preserve_workflows(self.repo, 'HEAD')
+        self.assertEqual(self.git('status', '--porcelain'), '')
 
 
 if __name__ == '__main__':

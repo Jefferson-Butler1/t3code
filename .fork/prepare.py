@@ -35,6 +35,12 @@ def apply_patches(repo, patches):
     return applied
 
 
+def preserve_workflows(repo, reference):
+    # GITHUB_TOKEN can publish source, but cannot introduce new workflow contents.
+    # The generated branch keeps the workflow tree already present in this fork.
+    git(repo, 'restore', '--source', reference, '--staged', '--worktree', '--', '.github/workflows')
+
+
 def release_is_complete(repo, version):
     result = subprocess.run(['gh', 'api', f'repos/{repo}/releases/tags/fork-v{version}'],
                             capture_output=True, text=True)
@@ -93,10 +99,13 @@ def main():
             raise ValueError(f'Invalid patch name in series: {name}')
         patches.append(CONTROL / '.fork/patches' / name)
     applied = apply_patches(source, patches)
+    workflow_source_commit = previous_commit or control_commit
+    preserve_workflows(source, workflow_source_commit)
     date = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d')
     version = f'{NIGHTLY.fullmatch(tag).group(1)}-nightly.{date}.{100000 + args.run_number}'
     manifest = {'upstream_tag': tag, 'upstream_commit': upstream_commit,
-                'control_commit': control_commit, 'version': version, 'patches': applied}
+                'control_commit': control_commit, 'version': version, 'patches': applied,
+                'workflow_source_commit': workflow_source_commit}
     (source / '.fork-build.json').write_text(json.dumps(manifest, indent=2) + '\n')
     git(source, 'add', '.fork-build.json')
     git(source, '-c', 'core.hooksPath=/dev/null', 'commit', '-m', f'chore(fork): record nightly build {version}')

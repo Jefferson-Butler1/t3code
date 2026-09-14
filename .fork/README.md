@@ -7,7 +7,7 @@ This fork checks the latest **published upstream Nightly** at **09:17 UTC daily*
 - **`fork-maintenance` (default):** this automation and the small patch series. Edit this branch.
 - **`patched-nightly`:** generated application source, replayed onto the latest published upstream tag. Do not edit it directly; successful builds replace it using an explicit force-with-lease. Its `.fork-build.json` records the upstream tag, source commit, maintenance commit and patch disposition.
 
-The upstream `main` branch is retained separately. Upstream's own release, deployment and notification workflows are disabled in this fork.
+The upstream `main` branch is retained separately. Upstream's own release, deployment and notification workflows are disabled in this fork. The generated `patched-nightly` branch preserves its previously published `.github/workflows` tree (or the maintenance branch's tree for the first release). Application source still follows the latest upstream Nightly. This lets the normal Actions token publish without workflow-editing credentials; `workflow_source_commit` records the preserved tree in the build manifest. Update fork automation on `fork-maintenance`.
 
 ## Patch lifecycle
 
