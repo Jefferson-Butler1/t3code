@@ -1,0 +1,221 @@
+From df740d1a51ecf981002dd2e6c7f00efd33136042 Mon Sep 17 00:00:00 2001
+From: Jefferson-Butler1 <jefferson.butler@icloud.com>
+Date: Fri, 11 Sep 2026 16:07:29 -0700
+Subject: [PATCH] fix(server): recover current files when conversation rewind
+ fails
+
+Capture file contents before checkpoint restoration and recover them if the provider rejects the rewind. Conversation-only rewinds remain unchanged, including non-Git workspaces.
+
+Upstream fd5553f1a now handles paginated Codex history. This patch retains only file recovery and adapts to restoreFiles introduced in efccda9ac.
+
+Validation: recovery regression fails on upstream; all 85 focused checkpoint and Codex runtime tests pass; server typecheck and targeted lint pass.
+---
+ apps/server/src/checkpointing/Utils.ts        |  6 ++
+ .../Layers/CheckpointReactor.test.ts          | 85 ++++++++++++++++++-
+ .../orchestration/Layers/CheckpointReactor.ts | 42 +++++++--
+ 3 files changed, 126 insertions(+), 7 deletions(-)
+
+diff --git a/apps/server/src/checkpointing/Utils.ts b/apps/server/src/checkpointing/Utils.ts
+index adc089f62..0845becd2 100644
+--- a/apps/server/src/checkpointing/Utils.ts
++++ b/apps/server/src/checkpointing/Utils.ts
+@@ -9,6 +9,12 @@ export function checkpointRefForThreadTurn(threadId: ThreadId, turnCount: number
+   );
+ }
+ 
++export function checkpointRefForRevertBase(threadId: ThreadId): CheckpointRef {
++  return CheckpointRef.make(
++    `${CHECKPOINT_REFS_PREFIX}/${Encoding.encodeBase64Url(threadId)}/revert-base`,
++  );
++}
++
+ export function resolveThreadWorkspaceCwd(input: {
+   readonly thread: {
+     readonly projectId: ProjectId;
+diff --git a/apps/server/src/orchestration/Layers/CheckpointReactor.test.ts b/apps/server/src/orchestration/Layers/CheckpointReactor.test.ts
+index 07fb9cdcc..b53f38b49 100644
+--- a/apps/server/src/orchestration/Layers/CheckpointReactor.test.ts
++++ b/apps/server/src/orchestration/Layers/CheckpointReactor.test.ts
+@@ -91,8 +91,8 @@ function createProviderServiceHarness(
+ ) {
+   const now = "2026-01-01T00:00:00.000Z";
+   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
+-  const rollbackConversation = vi.fn(
+-    (_input: { readonly threadId: ThreadId; readonly numTurns: number }) => Effect.void,
++  const rollbackConversation = vi.fn<ProviderServiceShape["rollbackConversation"]>(
++    () => Effect.void,
+   );
+   const assertConversationRollbackSupported = vi.fn<
+     ProviderServiceShape["assertConversationRollbackSupported"]
+@@ -1683,6 +1683,87 @@ describe("CheckpointReactor", () => {
+     }),
+   );
+ 
++  for (const { commandType, initializeGit } of [
++    { commandType: "thread.checkpoint.revert", initializeGit: true },
++    { commandType: "thread.conversation.revert", initializeGit: true },
++    { commandType: "thread.conversation.revert", initializeGit: false },
++  ] as const) {
++    effectIt.effect(
++      `${commandType} preserves current files when provider rollback fails (git: ${initializeGit})`,
++      () =>
++        Effect.gen(function* () {
++          const harness = yield* Effect.promise(() =>
++            createHarness({ initializeGit, seedFilesystemCheckpoints: initializeGit }),
++          );
++          const threadId = ThreadId.make("thread-1");
++          const createdAt = "2026-01-01T00:00:00.000Z";
++          const attempted = yield* Deferred.make<void>();
++          harness.provider.rollbackConversation.mockImplementation(() =>
++            Deferred.succeed(attempted, undefined).pipe(
++              Effect.andThen(
++                Effect.fail(
++                  new ProviderValidationError({
++                    operation: "ProviderService.rollbackConversation",
++                    issue: "paginated threads do not support thread/rollback",
++                  }),
++                ),
++              ),
++            ),
++          );
++          for (const turnCount of [1, 2]) {
++            yield* harness.engine.dispatch({
++              type: "thread.turn.diff.complete",
++              commandId: CommandId.make(`cmd-failed-revert-diff-${turnCount}`),
++              threadId,
++              turnId: asTurnId(`turn-${turnCount}`),
++              completedAt: createdAt,
++              checkpointRef: checkpointRefForThreadTurn(threadId, turnCount),
++              status: "ready",
++              files: [],
++              checkpointTurnCount: turnCount,
++              createdAt,
++            });
++          }
++          NodeFS.writeFileSync(NodePath.join(harness.cwd, "README.md"), "uncommitted edit\n");
++          NodeFS.writeFileSync(NodePath.join(harness.cwd, "local-note.txt"), "new local file\n");
++          const before = (yield* Effect.promise(harness.readModel)).threads.find(
++            (thread) => thread.id === threadId,
++          );
++          yield* harness.engine.dispatch({
++            type: commandType,
++            commandId: CommandId.make("cmd-provider-revert-failure"),
++            threadId,
++            turnCount: 1,
++            createdAt,
++          });
++          yield* Deferred.await(attempted);
++          yield* Effect.promise(harness.drain);
++          const after = (yield* Effect.promise(harness.readModel)).threads.find(
++            (thread) => thread.id === threadId,
++          );
++          expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "README.md"), "utf8")).toBe(
++            "uncommitted edit\n",
++          );
++          expect(NodeFS.readFileSync(NodePath.join(harness.cwd, "local-note.txt"), "utf8")).toBe(
++            "new local file\n",
++          );
++          expect(after?.checkpoints).toEqual(before?.checkpoints);
++          expect(after?.latestTurn).toEqual(before?.latestTurn);
++          expect(after?.activities).toContainEqual(
++            expect.objectContaining({
++              kind: "checkpoint.revert.failed",
++              payload: expect.objectContaining({
++                detail: expect.stringContaining("paginated threads"),
++              }),
++            }),
++          );
++          if (initializeGit) {
++            expect(gitRefExists(harness.cwd, checkpointRefForThreadTurn(threadId, 2))).toBe(true);
++          }
++        }),
++    );
++  }
++
+   it.each([
+     { commandType: "thread.checkpoint.revert", initializeGit: true },
+     { commandType: "thread.conversation.revert", initializeGit: true },
+diff --git a/apps/server/src/orchestration/Layers/CheckpointReactor.ts b/apps/server/src/orchestration/Layers/CheckpointReactor.ts
+index 9cfcc2e74..611a83f48 100644
+--- a/apps/server/src/orchestration/Layers/CheckpointReactor.ts
++++ b/apps/server/src/orchestration/Layers/CheckpointReactor.ts
+@@ -23,11 +23,13 @@ import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
+ 
+ import { parseTurnDiffFilesFromNumstat } from "../../checkpointing/Diffs.ts";
+ import {
++  checkpointRefForRevertBase,
+   checkpointRefForThreadTurn,
+   resolveThreadWorkspaceCwd,
+ } from "../../checkpointing/Utils.ts";
+ import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
+ import { ProviderService } from "../../provider/Services/ProviderService.ts";
++import { ProviderValidationError } from "../../provider/Errors.ts";
+ import { CheckpointReactor, type CheckpointReactorShape } from "../Services/CheckpointReactor.ts";
+ import { forkParked } from "../../serverActivation.ts";
+ import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
+@@ -727,6 +729,7 @@ const make = Effect.gen(function* () {
+ 
+     yield* providerService.assertConversationRollbackSupported(event.payload.threadId);
+ 
++    let revertBaseRef: CheckpointRef | undefined;
+     if (event.payload.restoreFiles !== false) {
+       if (!checkpointCwd) {
+         yield* appendRevertFailureActivity({
+@@ -755,6 +758,13 @@ const make = Effect.gen(function* () {
+         return;
+       }
+ 
++      // Include edits made since the last turn in the recovery snapshot.
++      revertBaseRef = checkpointRefForRevertBase(event.payload.threadId);
++      yield* checkpointStore.captureCheckpoint({
++        cwd: checkpointCwd,
++        checkpointRef: revertBaseRef,
++      });
++
+       const restored = yield* checkpointStore.restoreCheckpoint({
+         cwd: checkpointCwd,
+         checkpointRef: targetCheckpointRef,
+@@ -777,13 +787,35 @@ const make = Effect.gen(function* () {
+ 
+     const rolledBackTurns = Math.max(0, currentTurnCount - event.payload.turnCount);
+     if (rolledBackTurns > 0) {
+-      yield* providerService.rollbackConversation({
+-        threadId: event.payload.threadId,
+-        numTurns: rolledBackTurns,
+-      });
++      yield* providerService
++        .rollbackConversation({
++          threadId: event.payload.threadId,
++          numTurns: rolledBackTurns,
++        })
++        .pipe(
++          Effect.tapError(() =>
++            Effect.gen(function* () {
++              if (!checkpointCwd || !revertBaseRef) {
++                return;
++              }
++              const recovered = yield* checkpointStore.restoreCheckpoint({
++                cwd: checkpointCwd,
++                checkpointRef: revertBaseRef,
++                fallbackToHead: false,
++              });
++              if (!recovered) {
++                return yield* new ProviderValidationError({
++                  operation: "checkpoint.revert.recover",
++                  issue: `Could not restore pre-revert files from ${revertBaseRef}.`,
++                });
++              }
++              yield* workspaceEntries.refresh(checkpointCwd);
++            }),
++          ),
++        );
+     }
+ 
+-    const staleCheckpointRefs: Array<CheckpointRef> = [];
++    const staleCheckpointRefs: Array<CheckpointRef> = revertBaseRef ? [revertBaseRef] : [];
+     for (const checkpoint of thread.checkpoints) {
+       if (checkpoint.checkpointTurnCount > event.payload.turnCount) {
+         staleCheckpointRefs.push(checkpoint.checkpointRef);
+-- 
+2.53.0
+
