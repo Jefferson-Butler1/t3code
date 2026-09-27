@@ -1,0 +1,17 @@
+{
+  "upstream_tag": "v0.0.43-nightly.20260927.2344",
+  "upstream_commit": "de251fc2971a884cb5b1305ba4daf309dc8cccb0",
+  "control_commit": "fa0764f0591f1e3b476c733044e0509fdcdcf802",
+  "version": "0.0.43-nightly.20260927.100021",
+  "patches": [
+    {
+      "patch": "checkpoint-revert-recovery.patch",
+      "status": "applied"
+    },
+    {
+      "patch": "explicit-update-feed.patch",
+      "status": "applied"
+    }
+  ],
+  "workflow_source_commit": "e8370ea16c2903e242014127b7e99d0ef7063efc"
+}
