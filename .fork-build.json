@@ -1,0 +1,17 @@
+{
+  "upstream_tag": "v0.0.46-nightly.20261005.2702",
+  "upstream_commit": "cfa4f765ec05950a032b6c1cf9cdfff0c2391545",
+  "control_commit": "70ba415951102597081a7d85c7bb91838401e61d",
+  "version": "0.0.46-nightly.20261006.100031",
+  "patches": [
+    {
+      "patch": "explicit-update-feed.patch",
+      "status": "applied"
+    },
+    {
+      "patch": "right-panel-maximize-any-width.patch",
+      "status": "applied"
+    }
+  ],
+  "workflow_source_commit": "006aabab981d9469a43d6cfe353de09192e023e2"
+}
