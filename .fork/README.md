@@ -1,6 +1,6 @@
 # Jeff's maintained T3 fork
 
-This fork checks the latest **published upstream Nightly** at **09:17 UTC daily**. When upstream or the patch series changes, it applies the patches, runs the focused server tests, typecheck and lint, and builds an Apple Silicon macOS DMG. A failed patch or build leaves the previous release available.
+This fork checks the latest **published upstream Nightly** at **09:17 UTC daily**. When upstream or the patch series changes, it applies the patches, runs typecheck and lint, and builds an Apple Silicon macOS DMG. A failed patch or build leaves the previous release available.
 
 - **[Downloads](https://github.com/Jefferson-Butler1/t3code/releases):** successful patched Nightlies, checksums and source provenance.
 - **[Workflow](https://github.com/Jefferson-Butler1/t3code/actions/workflows/fork-nightly.yml):** daily runs; **Run workflow** also supports a forced rebuild.
@@ -13,11 +13,13 @@ The upstream `main` branch is retained separately. Upstream's own release, deplo
 
 `series` lists patches in application order. Each file under `patches/` is an ordinary `git format-patch` mailbox. To change a patch, generate a replacement from a clean upstream checkout and update this branch. The daily job uses `git am --3way`; conflicts stop the build. If a patch applies exactly in reverse, it is already present upstream and is skipped without making a duplicate commit. Equivalent upstream implementations still need human review.
 
-Upstream [PR #11338](https://github.com/pingdotgg/t3code/pull/11338) fixed Codex's paginated-history rewind, so the fork no longer patches the Codex runtime. The remaining `checkpoint-revert-recovery.patch` restores current file contents when provider rollback fails after a filesystem rewind. It preserves upstream's conversation-only rewind, including workspaces without Git. It does not preserve the original staged/unstaged split. Tracking: [recovery PR #9069](https://github.com/pingdotgg/t3code/pull/9069).
+Upstream's v2 orchestrator ([#2829](https://github.com/pingdotgg/t3code/pull/2829)) rolls back the provider conversation before restoring files, so a rejected rewind no longer touches the workspace. The fork retired `checkpoint-revert-recovery.patch` for that reason.
 
-The separate `explicit-update-feed.patch` sets the build publisher to `null` unless explicitly configured. This prevents electron-builder from inferring an upstream update feed for an unsigned fork. It is independent of the recovery fix.
+`explicit-update-feed.patch` sets the build publisher to `null` unless explicitly configured. This prevents electron-builder from inferring an upstream update feed for an unsigned fork.
 
-When upstream covers file recovery, remove `checkpoint-revert-recovery.patch` from `series` and delete the patch file. Run the workflow; it will publish upstream behavior with only the fork distribution configuration. To leave the fork entirely, disable the LaunchAgent described below and install an official T3 Nightly. Fork installation/removal does not require deleting T3 data.
+`right-panel-maximize-any-width.patch` lets the thread's right panel (terminal, files, diff, browser) be maximized at any window width. Upstream hides the maximize control below 980px, where the panel opens as a sheet; a maximized panel now renders inline and fills the workspace.
+
+The workflow typechecks the web app and lints the patched files. When a patch conflicts, regenerate it from a clean checkout of the failing upstream tag. To leave the fork entirely, disable the LaunchAgent described below and install an official T3 Nightly. Fork installation/removal does not require deleting T3 data.
 
 ## macOS installation and signing
 
@@ -59,4 +61,4 @@ Install the official Nightly over the fork. No T3 data needs to be removed. The 
 python3 -m unittest discover -s .fork -p '*_test.py'
 ```
 
-The workflow tests patch replay, exact upstream detection, and conflict behavior, then validates the actual patched server before building. Unchanged inputs skip rebuilding only if the matching release has its DMG, checksums and provenance. No automatic PRs or comments are created.
+The workflow tests patch replay, exact upstream detection, and conflict behavior, then typechecks and lints the patched source before building. Unchanged inputs skip rebuilding only if the matching release has its DMG, checksums and provenance. No automatic PRs or comments are created.
