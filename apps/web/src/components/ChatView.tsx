@@ -887,7 +887,7 @@ export default function ChatView(props: ChatViewProps) {
     window.addEventListener("dragend", clearWorkspaceFileDrag);
     return () => window.removeEventListener("dragend", clearWorkspaceFileDrag);
   }, [isWorkspaceFileDragActive]);
-  const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const isNarrowRightPanelLayout = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
   const [workspaceLayoutElement, setWorkspaceLayoutElement] = useState<HTMLDivElement | null>(null);
   const threadPanelPopoverAnchorRef = useRef<HTMLElement | null>(null);
@@ -1221,6 +1221,9 @@ export default function ChatView(props: ChatViewProps) {
     panelAnimationDurationMs,
   );
   const rightPanelPresent = rightPanelPresence.present;
+  const rightPanelMaximized = rightPanelOpen && rightPanelState.maximized === true;
+  // A maximized panel fills the workspace at any width, so it renders inline rather than as a sheet.
+  const shouldUsePlanSidebarSheet = isNarrowRightPanelLayout && !rightPanelMaximized;
   const rightPanelControlsInPanel =
     shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
   const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
@@ -1230,8 +1233,6 @@ export default function ChatView(props: ChatViewProps) {
     activePreviewMiniPlayer?.source ?? null,
     renderedRightPanelSurface,
   );
-  const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
-  const rightPanelMaximized = canMaximizeRightPanel && rightPanelState.maximized === true;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const [threadPanelPresentation, setThreadPanelPresentation] =
     useState<ThreadPanelPresentation>("inline");
@@ -2879,7 +2880,7 @@ export default function ChatView(props: ChatViewProps) {
     serverBrowserAvailable: activeEnvironmentServerBrowser,
     panelSurfaces: rightPanelState.surfaces,
     miniPlayerSource: activePreviewMiniPlayer?.source ?? null,
-    sheetLayout: shouldUsePlanSidebarSheet,
+    sheetLayout: isNarrowRightPanelLayout,
   });
   const openFileSurface = (relativePath: string) => {
     if (!activeThreadRef || !activeProject) return;
@@ -2914,7 +2915,7 @@ export default function ChatView(props: ChatViewProps) {
   const activeRunningTurnId = activeRuntime?.activeRunId ?? null;
   useProactivePanels({
     threadRef: isServerThread ? activeThreadRef : null,
-    enabled: settings.proactivePanelsEnabled && !shouldUsePlanSidebarSheet,
+    enabled: settings.proactivePanelsEnabled && !isNarrowRightPanelLayout,
     settingsHydrated: clientSettingsHydrated,
     threadDetailLoading,
     runningTurnId: activeRunningTurnId,
@@ -3074,13 +3075,13 @@ export default function ChatView(props: ChatViewProps) {
   };
   const toggleThreadPanelStable = useStableCallback(toggleThreadPanel);
   useEffect(() => {
-    if (!canMaximizeRightPanel) return;
+    if (!rightPanelOpen) return;
     if (useRightPanelStore.getState().consumeMaximizeRequest(routeThreadRef)) {
       useRightPanelStore.getState().setMaximized(routeThreadRef, true);
     }
-  }, [canMaximizeRightPanel, routeThreadRef]);
+  }, [rightPanelOpen, routeThreadRef]);
   const toggleRightPanelMaximized = () => {
-    if (!canMaximizeRightPanel || !activeThreadRef) return;
+    if (!rightPanelOpen || !activeThreadRef) return;
     useRightPanelStore.getState().setMaximized(activeThreadRef, !rightPanelMaximized);
   };
   const toggleRightPanelMaximizedStable = useStableCallback(toggleRightPanelMaximized);
@@ -7193,7 +7194,13 @@ export default function ChatView(props: ChatViewProps) {
           maximized={rightPanelMaximized}
           layoutControls={
             rightPanelOpen ? (
-              <div className="mr-px flex items-center">{panelToggleControls}</div>
+              <div className="mr-px flex items-center gap-1">
+                <RightPanelMaximizeControl
+                  maximized={false}
+                  onToggle={toggleRightPanelMaximizedStable}
+                />
+                {panelToggleControls}
+              </div>
             ) : null
           }
           surfaces={renderedRightPanelSurfaces}
