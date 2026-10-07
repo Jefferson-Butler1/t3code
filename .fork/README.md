@@ -19,6 +19,8 @@ Upstream's v2 orchestrator ([#2829](https://github.com/pingdotgg/t3code/pull/282
 
 `right-panel-maximize-any-width.patch` lets the thread's right panel (terminal, files, diff, browser) be maximized at any window width. Upstream hides the maximize control below 980px, where the panel opens as a sheet; a maximized panel now renders inline and fills the workspace.
 
+`home-agent.patch` carries upstream's open Home PR ([#15975](https://github.com/pingdotgg/t3code/pull/15975)): an opt-in agent thread (Settings → Home) that reads and drives threads on every machine the desktop app connects to. Other machines need this build too, since Home calls their `fleet.invoke`. Drop the patch once #15975 merges; until then, regenerate it from a clean checkout of the failing tag when upstream changes conflict.
+
 The workflow typechecks the web app and lints the patched files. When a patch conflicts, regenerate it from a clean checkout of the failing upstream tag. To leave the fork entirely, disable the LaunchAgent described below and install an official T3 Nightly. Fork installation/removal does not require deleting T3 data.
 
 ## macOS installation and signing
