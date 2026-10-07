@@ -13,6 +13,7 @@ import { discardComposerDraft } from "../lib/discardComposerDraft";
 import { requestCustomSnooze } from "./CustomSnoozeDialog";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
+import { isHomeProject } from "@t3tools/client-runtime/state/projects";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
@@ -78,7 +79,9 @@ import {
   ClockIcon,
   FolderIcon,
   GitBranchIcon,
+  HouseIcon,
   ListFilterIcon,
+  type LucideIcon,
   MessageCircleQuestionIcon,
   PinIcon,
   PinOffIcon,
@@ -163,10 +166,15 @@ import {
   useAllEnvironmentProjectSnapshotsReady,
   useProjects,
   useServerConfigs,
+  useThreadShell,
   useThreadShells,
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
-import { primaryServerKeybindingsAtom } from "../state/server";
+import {
+  primaryServerConfigAtom,
+  primaryServerKeybindingsAtom,
+  primaryServerSettingsAtom,
+} from "../state/server";
 import { environmentProjects } from "../state/projects";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
@@ -212,6 +220,8 @@ import {
   resolveSidebarRowAccessibility,
   type SidebarDropVerb,
   resolveSidebarThreadStatus,
+  resolveSidebarV2TopStatus,
+  type SidebarV2TopStatusKind,
   resolveThreadLastVisitedAt,
   searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
@@ -389,6 +399,7 @@ interface SidebarThreadPartitionInput {
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly workingShelfEnabled: boolean;
+  readonly homeThreadRef: ScopedThreadRef | null;
   // Snooze wakes and the queued-turn grace depend on the clock, so the minute
   // tick and the precise snooze-wake tick are inputs: a new key repartitions.
   readonly clockKey: string;
@@ -451,9 +462,16 @@ function useSidebarThreads(input: {
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly routeThreadRef: ScopedThreadRef | null;
+  readonly homeThreadRef: ScopedThreadRef | null;
 }) {
-  const { projectScopeKey, scopedProjectKeys, serverConfigs, optimisticDrop, routeThreadRef } =
-    input;
+  const {
+    projectScopeKey,
+    scopedProjectKeys,
+    serverConfigs,
+    optimisticDrop,
+    routeThreadRef,
+    homeThreadRef,
+  } = input;
   const threads = useThreadShells();
   const routeRowThreadKey =
     routeThreadRef === null
@@ -510,6 +528,7 @@ function useSidebarThreads(input: {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
+    homeThreadRef,
     clockKey: `${nowMinute}:${snoozeWakeTick}`,
   });
   const partitionNextWakeAt = partition.snoozedThreads[0]?.snoozedUntil ?? null;
@@ -599,9 +618,16 @@ function useSidebarThreads(input: {
 }
 
 function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
-  const { threads, scopedProjectKeys, serverConfigs, optimisticDrop, workingShelfEnabled } = input;
+  const {
+    threads,
+    scopedProjectKeys,
+    serverConfigs,
+    optimisticDrop,
+    workingShelfEnabled,
+    homeThreadRef,
+  } = input;
   const preciseNow = new Date().toISOString();
-  const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys);
+  const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, homeThreadRef);
   inboxReturns.observe(workingShelfEnabled ? threads : null);
   const pinned: EnvironmentThreadShell[] = [];
   const active: EnvironmentThreadShell[] = [];
@@ -767,6 +793,11 @@ function isOptimisticDropReleased(input: {
 // unmutated; built inside a hook they reach it frozen and cached.
 function useSidebarLookups() {
   const projects = useProjects();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const homeWorkspaceRoot = useAtomValue(
+    primaryServerConfigAtom,
+    (config) => config?.homeWorkspaceRoot ?? null,
+  );
   const environments = useEnvironmentIdentities();
   const serverConfigs = useServerConfigs();
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
@@ -789,7 +820,18 @@ function useSidebarLookups() {
   );
   const projectScopeItems = [
     { value: "all", label: "All projects" },
-    ...projectGroups.map((project) => ({ value: project.projectKey, label: project.displayName })),
+    // Home's folder is not a project to scope to.
+    ...projectGroups
+      .filter(
+        (project) =>
+          homeWorkspaceRoot === null ||
+          !project.memberProjects.some(
+            (member) =>
+              member.environmentId === primaryEnvironmentId &&
+              isHomeProject(member, homeWorkspaceRoot),
+          ),
+      )
+      .map((project) => ({ value: project.projectKey, label: project.displayName })),
   ];
   return {
     projects,
@@ -1542,6 +1584,108 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
   ),
 };
 
+// Status hues follow the system-wide convention set by sidebar v1 and the
+// mobile Live Activity/widgets (amber approval, indigo input, sky working)
+// so a thread reads the same color everywhere it surfaces.
+const SIDEBAR_TOP_STATUS: Record<
+  SidebarV2TopStatusKind,
+  { label: string; icon: SidebarV2TopStatusKind | null; Icon: LucideIcon | null; className: string }
+> = {
+  // No shimmer: a label that animates forever is noise in a sidebar full of
+  // them (and repaints every vsync on high-refresh displays).
+  working: { label: "Working", icon: "working", Icon: CircleDashedIcon, className: "text-info" },
+  // Waiting is calm background presence (post-settle background roster), not
+  // active progress, so the label keeps full strength.
+  waiting: {
+    label: "Waiting",
+    icon: "waiting",
+    Icon: CircleDotDashedIcon,
+    className: "text-muted-foreground",
+  },
+  approval: {
+    label: "Approval",
+    icon: "approval",
+    Icon: ShieldQuestionIcon,
+    className: "text-warning-foreground",
+  },
+  input: {
+    label: "Input",
+    icon: "input",
+    Icon: MessageCircleQuestionIcon,
+    className: "text-indigo-600 dark:text-indigo-300",
+  },
+  limited: { label: "Limited", icon: "failed", Icon: CircleAlertIcon, className: "text-warning" },
+  failed: { label: "Failed", icon: "failed", Icon: CircleAlertIcon, className: "text-error" },
+  woke: { label: "Woke", icon: "woke", Icon: AlarmClockIcon, className: "text-warning" },
+  done: { label: "Done", icon: "done", Icon: CircleCheckIcon, className: "text-success" },
+};
+
+/**
+ * The fixed row for the current Home thread, above every other row. Home has
+ * no project, settle, or pin affordances, so it only shows its status.
+ */
+const SidebarHomeRow = memo(function SidebarHomeRow(props: {
+  threadRef: ScopedThreadRef;
+  isActive: boolean;
+  onActivate: (threadRef: ScopedThreadRef) => void;
+}) {
+  const { isActive, onActivate, threadRef } = props;
+  const thread = useThreadShell(threadRef);
+  const localLastVisitedAt = useUiStateStore(
+    (state) => state.threadLastVisitedAtById[scopedThreadKey(threadRef)],
+  );
+  const topStatusKind =
+    thread === null
+      ? null
+      : resolveSidebarV2TopStatus({
+          status: resolveSidebarThreadStatus(thread),
+          isUnread: hasUnseenCompletion({
+            ...thread,
+            lastVisitedAt: resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt),
+          }),
+          isWoke: false,
+        });
+  const topStatus = topStatusKind === null ? null : SIDEBAR_TOP_STATUS[topStatusKind];
+  const activate = () => onActivate(threadRef);
+  return (
+    <li className="list-none">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={topStatus ? `Home, ${topStatus.label}` : "Home"}
+        aria-current={isActive ? "page" : undefined}
+        data-testid="sidebar-home-row"
+        className={cn(
+          "flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm font-medium outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          isActive
+            ? "bg-sidebar-row-active text-sidebar-foreground"
+            : "text-sidebar-foreground hover:bg-sidebar-row-hover",
+        )}
+        onClick={activate}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          activate();
+        }}
+      >
+        <HouseIcon aria-hidden className="size-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">Home</span>
+        {topStatus ? (
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1 text-xs font-medium",
+              topStatus.className,
+            )}
+          >
+            {topStatus.Icon ? <topStatus.Icon aria-hidden className="size-4 shrink-0" /> : null}
+            <span role="status">{topStatus.label}</span>
+          </span>
+        ) : null}
+      </div>
+    </li>
+  );
+});
+
 type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   variant: "card" | "slim";
@@ -1683,56 +1827,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     isActive: props.isActive,
     isSelected,
   });
+  const topStatusKind = resolveSidebarV2TopStatus({ status, isUnread, isWoke });
   const topStatus =
-    status === "working"
-      ? {
-          label: thread.goal?.status === "active" ? "Goal" : "Working",
-          icon: "working" as const,
-          className: "text-info",
-        }
-      : status === "waiting"
-        ? {
-            label: "Waiting",
-            icon: "waiting" as const,
-            className: "text-muted-foreground",
-          }
-        : status === "approval"
-          ? {
-              label: "Approval",
-              icon: "approval" as const,
-              className: "text-warning-foreground",
-            }
-          : status === "input"
-            ? {
-                label: "Input",
-                icon: "input" as const,
-                className: "text-indigo-600 dark:text-indigo-300",
-              }
-            : status === "limited"
-              ? {
-                  label: "Limited",
-                  icon: "failed" as const,
-                  className: "text-warning",
-                }
-              : status === "failed"
-                ? {
-                    label: "Failed",
-                    icon: "failed" as const,
-                    className: "text-error",
-                  }
-                : isWoke
-                  ? {
-                      label: "Woke",
-                      icon: "woke" as const,
-                      className: "text-warning",
-                    }
-                  : isUnread
-                    ? {
-                        label: "Done",
-                        icon: "done" as const,
-                        className: "text-success",
-                      }
-                    : null;
+    topStatusKind === null
+      ? null
+      : topStatusKind === "working" && thread.goal?.status === "active"
+        ? { ...SIDEBAR_TOP_STATUS.working, label: "Goal" }
+        : SIDEBAR_TOP_STATUS[topStatusKind];
   const isWokeStatus = topStatus?.icon === "woke";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
@@ -2801,6 +2902,16 @@ export default function Sidebar() {
   });
   const newThreadContext = useHandleNewThread();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const homeThreadId = useAtomValue(
+    primaryServerSettingsAtom,
+    (settings) => settings.home.threadId,
+  );
+  // The current Home thread lives on the primary environment and gets its own
+  // fixed row; older Home threads stay in the normal lists.
+  const homeThreadRef =
+    primaryEnvironmentId !== null && homeThreadId !== null
+      ? scopeThreadRef(primaryEnvironmentId, homeThreadId)
+      : null;
   const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
   const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
@@ -3024,6 +3135,7 @@ export default function Sidebar() {
     serverConfigs,
     optimisticDrop,
     routeThreadRef,
+    homeThreadRef,
   });
 
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
@@ -4917,6 +5029,14 @@ export default function Sidebar() {
                       };
                       const from = isContextDrag ? null : (dragState?.activeSection ?? null);
                       const items: ReactNode[] = [
+                        homeThreadRef === null ? null : (
+                          <SidebarHomeRow
+                            key="home"
+                            threadRef={homeThreadRef}
+                            isActive={routeThreadKey === scopedThreadKey(homeThreadRef)}
+                            onActivate={navigateToThread}
+                          />
+                        ),
                         <SidebarDraftBlock
                           key="draft-sessions"
                           projectByKey={projectByKey}
