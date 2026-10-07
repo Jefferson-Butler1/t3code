@@ -119,7 +119,11 @@ import {
   useThreadShells,
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
-import { primaryServerKeybindingsAtom } from "../state/server";
+import {
+  primaryServerConfigAtom,
+  primaryServerKeybindingsAtom,
+  primaryServerSettingsAtom,
+} from "../state/server";
 import { environmentProjects } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
 import { useThreadSearch } from "../state/queries";
@@ -127,7 +131,7 @@ import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { readEnvironmentScope } from "../state/session";
 import { buildThreadRouteParams, resolveActiveThreadRouteRef } from "../threadRoutes";
 import type { SidebarThreadSummary } from "../types";
-import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { isHomeProject, isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { cn } from "~/lib/utils";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import {
@@ -198,6 +202,7 @@ import { TooltipProvider } from "./ui/tooltip";
 import { composerDraftHasUserContent, DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import {
+  SidebarHomeRow,
   SidebarSearchResultRow,
   SortableThreadRow,
   type SidebarProviderEntry,
@@ -291,6 +296,7 @@ interface SidebarThreadPartitionInput {
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly workingShelfEnabled: boolean;
+  readonly homeThreadRef: ScopedThreadRef | null;
   // Snooze wakes and the queued-turn grace depend on the clock, so the minute
   // tick and the precise snooze-wake tick are inputs: a new key repartitions.
   readonly clockKey: string;
@@ -353,9 +359,16 @@ function useSidebarThreads(input: {
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly routeThreadRef: ScopedThreadRef | null;
+  readonly homeThreadRef: ScopedThreadRef | null;
 }) {
-  const { projectScopeKey, scopedProjectKeys, serverConfigs, optimisticDrop, routeThreadRef } =
-    input;
+  const {
+    projectScopeKey,
+    scopedProjectKeys,
+    serverConfigs,
+    optimisticDrop,
+    routeThreadRef,
+    homeThreadRef,
+  } = input;
   const threads = useThreadShells();
   const routeRowThreadKey =
     routeThreadRef === null
@@ -412,6 +425,7 @@ function useSidebarThreads(input: {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
+    homeThreadRef,
     clockKey: `${nowMinute}:${snoozeWakeTick}`,
   });
   const partitionNextWakeAt = partition.snoozedThreads[0]?.snoozedUntil ?? null;
@@ -501,9 +515,16 @@ function useSidebarThreads(input: {
 }
 
 function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
-  const { threads, scopedProjectKeys, serverConfigs, optimisticDrop, workingShelfEnabled } = input;
+  const {
+    threads,
+    scopedProjectKeys,
+    serverConfigs,
+    optimisticDrop,
+    workingShelfEnabled,
+    homeThreadRef,
+  } = input;
   const preciseNow = new Date().toISOString();
-  const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys);
+  const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, homeThreadRef);
   inboxReturns.observe(workingShelfEnabled ? threads : null);
   const pinned: EnvironmentThreadShell[] = [];
   const active: EnvironmentThreadShell[] = [];
@@ -669,6 +690,11 @@ function isOptimisticDropReleased(input: {
 // unmutated; built inside a hook they reach it frozen and cached.
 function useSidebarLookups() {
   const projects = useProjects();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const homeWorkspaceRoot = useAtomValue(
+    primaryServerConfigAtom,
+    (config) => config?.homeWorkspaceRoot ?? null,
+  );
   const environments = useEnvironmentIdentities();
   const serverConfigs = useServerConfigs();
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
@@ -691,7 +717,18 @@ function useSidebarLookups() {
   );
   const projectScopeItems = [
     { value: "all", label: "All projects" },
-    ...projectGroups.map((project) => ({ value: project.projectKey, label: project.displayName })),
+    // Home's folder is not a project to scope to.
+    ...projectGroups
+      .filter(
+        (project) =>
+          homeWorkspaceRoot === null ||
+          !project.memberProjects.some(
+            (member) =>
+              member.environmentId === primaryEnvironmentId &&
+              isHomeProject(member, homeWorkspaceRoot),
+          ),
+      )
+      .map((project) => ({ value: project.projectKey, label: project.displayName })),
   ];
   return {
     projects,
@@ -835,6 +872,16 @@ export default function Sidebar() {
   });
   const newThreadContext = useHandleNewThread();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const homeThreadId = useAtomValue(
+    primaryServerSettingsAtom,
+    (settings) => settings.home.threadId,
+  );
+  // The current Home thread lives on the primary environment and gets its own
+  // fixed row; older Home threads stay in the normal lists.
+  const homeThreadRef =
+    primaryEnvironmentId !== null && homeThreadId !== null
+      ? scopeThreadRef(primaryEnvironmentId, homeThreadId)
+      : null;
   const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
   const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
@@ -1058,6 +1105,7 @@ export default function Sidebar() {
     serverConfigs,
     optimisticDrop,
     routeThreadRef,
+    homeThreadRef,
   });
 
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
@@ -2951,6 +2999,14 @@ export default function Sidebar() {
                       };
                       const from = isContextDrag ? null : (dragState?.activeSection ?? null);
                       const items: ReactNode[] = [
+                        homeThreadRef === null ? null : (
+                          <SidebarHomeRow
+                            key="home"
+                            threadRef={homeThreadRef}
+                            isActive={routeThreadKey === scopedThreadKey(homeThreadRef)}
+                            onActivate={navigateToThread}
+                          />
+                        ),
                         <SidebarDraftBlock
                           key="draft-sessions"
                           projectByKey={projectByKey}

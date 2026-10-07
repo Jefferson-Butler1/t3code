@@ -30,6 +30,7 @@ import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
+import { notHomeLayer } from "../home/HomeTestkit.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -157,6 +158,7 @@ const layerRecordingTools = (calls: Array<unknown>) => {
     }),
   ).pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provide(notHomeLayer),
     Layer.provide(
       Layer.mergeAll(
         McpToolAccessTestkit.liveThreadsLayer,
