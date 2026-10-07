@@ -1,8 +1,5 @@
-import {
-  scopedProjectKey,
-  scopeProjectRef,
-  scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+import { useAtomValue } from "@effect/atom-react";
+import { scopedProjectKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { DEFAULT_SERVER_SETTINGS, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
 import { useRouter } from "@tanstack/react-router";
 import {
@@ -36,7 +33,8 @@ import {
 } from "../lib/chatThreadActions";
 import { readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { environmentServerConfigsAtom } from "../state/server";
+import { environmentServerConfigsAtom, primaryServerConfigAtom } from "../state/server";
+import { defaultNewThreadProjectRef } from "../lib/chatThreadActions";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
@@ -399,7 +397,7 @@ export function useHandleNewThread() {
   );
   const projects = useProjects();
   const handleNewThread = useNewThreadHandler();
-  const [defaultProject] = orderItemsByPreferredIds({
+  const orderedProjects = orderItemsByPreferredIds({
     items: projects,
     preferredIds: projectOrder,
     getId: getProjectOrderKey,
@@ -408,14 +406,22 @@ export function useHandleNewThread() {
       legacyProjectCwdPreferenceKey(project.workspaceRoot),
     ],
   });
-  const defaultProjectRef = defaultProject
-    ? scopeProjectRef(defaultProject.environmentId, defaultProject.id)
-    : null;
+  const primaryEnvironmentId = useAtomValue(
+    primaryServerConfigAtom,
+    (config) => config?.environment.environmentId ?? null,
+  );
+  const homeWorkspaceRoot = useAtomValue(
+    primaryServerConfigAtom,
+    (config) => config?.homeWorkspaceRoot ?? null,
+  );
 
   return {
     activeDraftThread,
     activeThread,
-    defaultProjectRef,
+    defaultProjectRef: defaultNewThreadProjectRef(orderedProjects, {
+      primaryEnvironmentId,
+      homeWorkspaceRoot,
+    }),
     handleNewThread,
     routeDraftId,
     routeThreadRef,

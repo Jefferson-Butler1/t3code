@@ -419,6 +419,7 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
             recordMetrics: () => Effect.void,
             shutdown: Effect.void,
           }),
+          DesktopState.layer,
           layerDesktopEnvironment,
           DesktopAppSettings.layerTest(),
           layerDesktopClientSettings,
