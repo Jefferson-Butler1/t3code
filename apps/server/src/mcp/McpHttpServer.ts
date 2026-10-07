@@ -28,6 +28,8 @@ import * as PreviewControlsHandlers from "./toolkits/previewControls/handlers.ts
 import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
 import * as EnvironmentHandlers from "./toolkits/environment/handlers.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
+import { HomeToolkit } from "./toolkits/home/tools.ts";
+import * as HomeHandlers from "./toolkits/home/handlers.ts";
 import * as ProjectHandlers from "./toolkits/project/handlers.ts";
 import { AttachmentToolkit } from "./toolkits/attachment/tools.ts";
 import * as AttachmentHandlers from "./toolkits/attachment/handlers.ts";
@@ -815,6 +817,8 @@ const layerEnvironmentRegistration = toolkitRegistration(
 
 const layerProjectRegistration = toolkitRegistration(ProjectToolkit, ProjectHandlers.layer);
 
+const layerHomeRegistration = toolkitRegistration(HomeToolkit, HomeHandlers.layer);
+
 const layerAttachmentRegistration = toolkitRegistration(
   AttachmentToolkit,
   AttachmentHandlers.layer,
@@ -853,6 +857,7 @@ export const layer = Layer.mergeAll(
   layerThreadToolkit,
   layerAttachmentRegistration,
   layerProjectRegistration,
+  layerHomeRegistration,
   layerEnvironmentRegistration,
   layerPreviewControlsRegistration,
   layerWorktreeToolkitRegistration,

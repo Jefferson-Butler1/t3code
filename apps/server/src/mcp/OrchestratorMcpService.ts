@@ -199,7 +199,7 @@ function failure(code: OrchestratorMcpFailure["code"], message: string): Orchest
   return new OrchestratorMcpFailure({ code, message });
 }
 
-function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
+export function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
   if (!isThreadManagementError(error)) return failure("orchestration_error", errorMessage(error));
   switch (error._tag) {
     case "ThreadManagementThreadNotFoundError":
@@ -257,6 +257,35 @@ function scheduledTaskSummary(task: ScheduledTask, mayRun: boolean): Orchestrato
       ? {}
       : { webhookSignature: task.webhook.hasSecret ? "set" : "none" }),
   };
+}
+
+/** The provider list orchestrator_capabilities reports, also served to Home from other environments. */
+export function providerCapabilities(
+  providers: ReadonlyArray<ServerProvider>,
+  orchestrationCapableInstanceIds: ReadonlySet<string>,
+): OrchestratorMcpCapabilitiesResult["providers"] {
+  return providers.map((provider) => {
+    const constraints = providerConstraints(
+      provider,
+      orchestrationCapableInstanceIds.has(provider.instanceId),
+    );
+    return {
+      providerInstanceId: provider.instanceId,
+      driverKind: provider.driver,
+      displayName: provider?.displayName ?? null,
+      models:
+        provider?.models.map((model) => ({
+          id: model.slug,
+          label: model.name ?? null,
+          ...(model.capabilities?.optionDescriptors === undefined
+            ? {}
+            : { options: model.capabilities.optionDescriptors }),
+        })) ?? [],
+      canRunChildTask: constraints.length === 0,
+      canRunCrossProviderChildTask: constraints.length === 0,
+      constraints: [...constraints],
+    };
+  });
 }
 
 function providerConstraints(
@@ -611,7 +640,7 @@ function taskPrompt(input: OrchestratorMcpDelegateTaskInput): string {
     : `Act as the ${input.role} sub-agent for this task.\n\n${input.task}`;
 }
 
-function threadSettlement(
+export function threadSettlement(
   thread: Pick<OrchestrationV2ThreadShell, "settledOverride" | "settledAt">,
 ): Pick<OrchestratorMcpThreadListItem, "settled" | "settledAt"> {
   const settled = thread.settledOverride === "settled";
@@ -634,12 +663,12 @@ function threadSnooze(
 }
 
 /** Where and when a thread is shown: the environment for its link, and the time for snooze state. */
-interface ThreadViewContext {
+export interface ThreadViewContext {
   readonly environmentId: EnvironmentId;
   readonly nowMs: number;
 }
 
-function listItemFromShell(
+export function listItemFromShell(
   shell: OrchestrationV2ThreadShell,
   context: ThreadViewContext,
 ): OrchestratorMcpThreadListItem {
@@ -650,6 +679,7 @@ function listItemFromShell(
       threadId: shell.id,
       title: shell.title,
     }),
+    projectId: shell.projectId,
     title: shell.title,
     createdBy: shell.createdBy,
     creationSource: shell.creationSource,
@@ -843,6 +873,69 @@ function timelineItem(input: {
     updatedAt: DateTime.formatIso(input.row.item.updatedAt),
   };
 }
+
+/**
+ * One page of a thread as t3_thread_read returns it. Home reads every
+ * environment through this; the MCP tool adds delegated-result
+ * acknowledgement on top.
+ */
+export const readThreadPage = Effect.fn("OrchestratorMcp.readThreadPage")(function* (
+  threadManagement: ThreadManagementService.ThreadManagementService["Service"],
+  target: Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "runtimeRequests">,
+  shell: OrchestrationV2ThreadShell,
+  input: OrchestratorMcpThreadReadInput,
+  environmentId: EnvironmentId,
+) {
+  const nowMs = yield* Clock.currentTimeMillis;
+  const view = input.view ?? "messages";
+  const afterPosition = input.afterPosition ?? -1;
+  const limit = input.limit ?? DEFAULT_THREAD_READ_LIMIT;
+  const maxChars = input.maxCharsPerItem ?? DEFAULT_THREAD_ITEM_MAX_CHARS;
+  const timeline = yield* threadManagement
+    .getTimelinePage(input.threadId, {
+      afterPosition,
+      limit,
+      view,
+      ...(input.itemId === undefined ? {} : { itemId: input.itemId }),
+    })
+    .pipe(Effect.mapError(threadManagementFailure));
+  const page = timeline.items;
+  const messageIdsByThread = new Map<ThreadId, Array<MessageId>>();
+  for (const row of page) {
+    if (row.item.type !== "user_message" && row.item.type !== "assistant_message") continue;
+    const ids = messageIdsByThread.get(row.sourceThreadId) ?? [];
+    ids.push(row.item.messageId);
+    messageIdsByThread.set(row.sourceThreadId, ids);
+  }
+  const sourceMessages = yield* Effect.forEach(
+    [...messageIdsByThread],
+    ([threadId, messageIds]) =>
+      threadManagement.getThreadRecords(threadId, ["messages"], { messageIds }).pipe(
+        Effect.map((records) => [threadId, records.messages] as const),
+        Effect.mapError(threadManagementFailure),
+      ),
+    { concurrency: 1 },
+  );
+  const messagesByThreadId = new Map(sourceMessages);
+  const result = {
+    thread: threadDetail(target, timeline.totalItems, shell, { environmentId, nowMs }),
+    recentRuns: target.runs
+      .toSorted((left, right) => right.ordinal - left.ordinal)
+      .slice(0, input.runLimit ?? DEFAULT_THREAD_RUN_LIMIT)
+      .map(threadRun),
+    items: page.map((row) =>
+      timelineItem({
+        row,
+        maxChars,
+        messagesByThreadId,
+        ...(input.itemId === undefined ? {} : { textOffset: input.textOffset ?? 0 }),
+      }),
+    ),
+    nextPosition: page.at(-1)?.position ?? null,
+    hasMore: timeline.hasMore,
+  } satisfies OrchestratorMcpThreadReadResult;
+  return { result, page };
+});
 
 const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
@@ -1794,28 +1887,7 @@ const make = Effect.gen(function* () {
           inheritedModel: parent?.thread.modelSelection.model ?? null,
           runtimeMode: limits.runtimeMode,
           interactionMode: limits.interactionMode,
-          providers: providers.map((provider) => {
-            const constraints = providerConstraints(
-              provider,
-              orchestrationCapableInstanceIds.has(provider.instanceId),
-            );
-            return {
-              providerInstanceId: provider.instanceId,
-              driverKind: provider.driver,
-              displayName: provider?.displayName ?? null,
-              models:
-                provider?.models.map((model) => ({
-                  id: model.slug,
-                  label: model.name ?? null,
-                  ...(model.capabilities?.optionDescriptors === undefined
-                    ? {}
-                    : { options: model.capabilities.optionDescriptors }),
-                })) ?? [],
-              canRunChildTask: constraints.length === 0,
-              canRunCrossProviderChildTask: constraints.length === 0,
-              constraints: [...constraints],
-            };
-          }),
+          providers: providerCapabilities(providers, orchestrationCapableInstanceIds),
           features: {
             appOwnedSubagents: true,
             asyncPolling: true,
@@ -2275,6 +2347,9 @@ const make = Effect.gen(function* () {
               statuses === null || statuses.has(thread.activityRunStatus ?? thread.status),
           )
           .filter(
+            (thread) => input.snoozed === undefined || isSnoozed(thread, nowMs) === input.snoozed,
+          )
+          .filter(
             (thread) =>
               input.settled === undefined || threadSettlement(thread).settled === input.settled,
           )
@@ -2303,36 +2378,14 @@ const make = Effect.gen(function* () {
     readThread: (scope, input) =>
       Effect.gen(function* () {
         const { parent, target, shell } = yield* loadReadableThread(scope, input.threadId);
-        const view = input.view ?? "messages";
-        const afterPosition = input.afterPosition ?? -1;
-        const limit = input.limit ?? DEFAULT_THREAD_READ_LIMIT;
-        const maxChars = input.maxCharsPerItem ?? DEFAULT_THREAD_ITEM_MAX_CHARS;
-        const timeline = yield* threadManagement
-          .getTimelinePage(input.threadId, {
-            afterPosition,
-            limit,
-            view,
-            ...(input.itemId === undefined ? {} : { itemId: input.itemId }),
-          })
-          .pipe(Effect.mapError(threadManagementFailure));
-        const page = timeline.items;
-        const messageIdsByThread = new Map<ThreadId, Array<MessageId>>();
-        for (const row of page) {
-          if (row.item.type !== "user_message" && row.item.type !== "assistant_message") continue;
-          const ids = messageIdsByThread.get(row.sourceThreadId) ?? [];
-          ids.push(row.item.messageId);
-          messageIdsByThread.set(row.sourceThreadId, ids);
-        }
-        const sourceMessages = yield* Effect.forEach(
-          [...messageIdsByThread],
-          ([threadId, messageIds]) =>
-            threadManagement.getThreadRecords(threadId, ["messages"], { messageIds }).pipe(
-              Effect.map((records) => [threadId, records.messages] as const),
-              Effect.mapError(threadManagementFailure),
-            ),
-          { concurrency: 1 },
+        const { result, page } = yield* readThreadPage(
+          threadManagement,
+          target,
+          shell,
+          input,
+          scope.environmentId,
         );
-        const messagesByThreadId = new Map(sourceMessages);
+        const maxChars = input.maxCharsPerItem ?? DEFAULT_THREAD_ITEM_MAX_CHARS;
         const task = parent === undefined ? undefined : directAppOwnedChildTask(parent, target);
         if (
           parent !== undefined &&
@@ -2374,26 +2427,7 @@ const make = Effect.gen(function* () {
             );
           }
         }
-        return {
-          thread: threadDetail(target, timeline.totalItems, shell, {
-            environmentId: scope.environmentId,
-            nowMs: yield* Clock.currentTimeMillis,
-          }),
-          recentRuns: target.runs
-            .toSorted((left, right) => right.ordinal - left.ordinal)
-            .slice(0, input.runLimit ?? DEFAULT_THREAD_RUN_LIMIT)
-            .map(threadRun),
-          items: page.map((row) =>
-            timelineItem({
-              row,
-              maxChars,
-              messagesByThreadId,
-              ...(input.itemId === undefined ? {} : { textOffset: input.textOffset ?? 0 }),
-            }),
-          ),
-          nextPosition: page.at(-1)?.position ?? null,
-          hasMore: timeline.hasMore,
-        } satisfies OrchestratorMcpThreadReadResult;
+        return result;
       }),
     sendToThread: (scope, input) =>
       Effect.gen(function* () {
