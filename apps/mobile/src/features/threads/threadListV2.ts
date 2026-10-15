@@ -23,7 +23,7 @@ import {
   sortPinnedThreadsByOrderKey,
   sortSettledThreads,
 } from "@t3tools/client-runtime/state/thread-sort";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, InboxSortOrder, ProjectId } from "@t3tools/contracts";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
 import type { ThreadMoveAvailability } from "./threadOrder";
@@ -678,6 +678,8 @@ export function buildThreadListV2Items(input: {
   /** Returns this device observed but the server does not stamp, such as an
       approval request mid-turn. Only read while the beta is on. */
   readonly inboxReturnAt?: (thread: EnvironmentThreadShell) => number | undefined;
+  /** Direction of the beta inbox. Newest first when omitted. */
+  readonly inboxSortOrder?: InboxSortOrder;
   /** Expands the snoozed shelf into rows. Collapsed is the default. */
   readonly snoozedShelfExpanded?: boolean;
   /** Expands the settled shelf into rows. Expanded is the default. */
@@ -768,7 +770,7 @@ export function buildThreadListV2Items(input: {
   // The beta inbox is time-ordered, so the saved arrangement (and any move in
   // flight) is kept but not applied until the beta is off again.
   const orderedActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
+    ? sortInboxThreadsByReturn(active, input.inboxSortOrder ?? "newest_first", input.inboxReturnAt)
     : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
   // Newest send first; finishing and waking again do not move a row.
   const orderedWorking = sortWorkingThreadsBySend(working);
