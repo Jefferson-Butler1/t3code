@@ -2321,6 +2321,7 @@ export default function Sidebar() {
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
+  const inboxSortOrder = useClientSettings((s) => s.sidebarInboxSortOrder);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
     settleThread,
@@ -2748,7 +2749,7 @@ export default function Sidebar() {
     // web and mobile from the same data.
     const sortedPinned = sortPinnedThreadsForSidebar(pinned);
     const sortedActive = workingShelfEnabled
-      ? sortInboxThreadsByReturn(active, inboxReturns.returnedAt)
+      ? sortInboxThreadsByReturn(active, inboxSortOrder, inboxReturns.returnedAt)
       : sortThreadsForSidebar(active);
     return {
       pinnedThreads:
@@ -2780,6 +2781,7 @@ export default function Sidebar() {
     };
   }, [
     homeThreadRef,
+    inboxSortOrder,
     nowMinute,
     optimisticDrop,
     scopedProjectKeys,
@@ -3726,9 +3728,10 @@ export default function Sidebar() {
         ...activeThreads.filter((candidate) => key(candidate) !== dragState.activeKey),
         applySidebarThreadDrop(thread, "active", dragState.occurredAt),
       ],
+      inboxSortOrder,
       inboxReturns.returnedAt,
     ).map(key);
-  }, [activeThreads, dragState, threadByKey, workingShelfEnabled]);
+  }, [activeThreads, dragState, inboxSortOrder, threadByKey, workingShelfEnabled]);
   const sidebarSortingStrategy = useMemo(
     () =>
       createSidebarSortingStrategy({
