@@ -276,6 +276,7 @@ function ThreadNavigationSidebarPane(
     setSettledVisibleCount((count) => count + THREAD_LIST_V2_SETTLED_PAGE_COUNT);
   const {
     loaded: shelfPreferencesLoaded,
+    inboxSortOrder,
     settledShelfExpanded,
     snoozedShelfExpanded,
     workingShelfEnabled,
@@ -323,6 +324,7 @@ function ThreadNavigationSidebarPane(
     shelfPreferencesLoaded,
     workingShelfEnabled,
     workingShelfExpanded,
+    inboxSortOrder,
     snoozedShelfExpanded,
     settledShelfExpanded,
     selectedThreadKey: props.selectedThreadKey ?? null,
