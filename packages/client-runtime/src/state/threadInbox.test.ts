@@ -194,10 +194,9 @@ describe("createInboxReturnTracker", () => {
     expect(tracker.returnedAt(a)).toBe(12_000);
     expect(tracker.returnedAt(b)).toBeUndefined();
     vi.advanceTimersByTime(500);
-    expect(sortInboxThreadsByReturn([a, b], tracker.returnedAt).map((entry) => entry.id)).toEqual([
-      "b",
-      "a",
-    ]);
+    expect(
+      sortInboxThreadsByReturn([a, b], "newest_first", tracker.returnedAt).map((entry) => entry.id),
+    ).toEqual(["b", "a"]);
   });
 
   it("cancels pending timers for removed threads and disabled shelves", () => {
@@ -239,5 +238,29 @@ describe("sortWorkingThreadsBySend", () => {
     expect(
       sortWorkingThreadsBySend([launched, sentFirst, sentLast]).map((thread) => thread.id),
     ).toEqual(["sent-last", "sent-first", "launched"]);
+  });
+});
+
+describe("sortInboxThreadsByReturn", () => {
+  it("orders by return time in the chosen direction", () => {
+    const returnedFirst = {
+      ...thread("returned-first", false),
+      unsettledAt: "2026-06-01T01:00:00.000Z",
+    };
+    const returnedLast = {
+      ...thread("returned-last", false),
+      unsettledAt: "2026-06-01T02:00:00.000Z",
+    };
+    // Seen by this client leaving the Working section after both.
+    const observed = thread("observed", false);
+    const observedAt = (candidate: { readonly id: string }) =>
+      candidate.id === "observed" ? Date.parse("2026-06-01T03:00:00.000Z") : undefined;
+    const threads = [returnedLast, observed, returnedFirst];
+    expect(
+      sortInboxThreadsByReturn(threads, "newest_first", observedAt).map((thread) => thread.id),
+    ).toEqual(["observed", "returned-last", "returned-first"]);
+    expect(
+      sortInboxThreadsByReturn(threads, "oldest_first", observedAt).map((thread) => thread.id),
+    ).toEqual(["returned-first", "returned-last", "observed"]);
   });
 });
