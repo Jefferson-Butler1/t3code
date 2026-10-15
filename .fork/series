@@ -2,3 +2,4 @@ explicit-update-feed.patch
 right-panel-maximize-any-width.patch
 home-agent.patch
 inbox-order.patch
+thread-links-any-environment.patch
