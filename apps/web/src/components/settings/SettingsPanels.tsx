@@ -18,6 +18,7 @@ import {
 import {
   DEFAULT_UNIFIED_SETTINGS,
   type DiffLayout,
+  InboxSortOrder,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ResponseStreamingMode,
@@ -137,6 +138,12 @@ const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string>
   manual: msg("Manual"),
 };
 const isSidebarProjectSortOrder = Schema.is(SidebarProjectSortOrder);
+
+const INBOX_SORT_ORDER_LABELS: Record<InboxSortOrder, string> = {
+  newest_first: msg("Newest first"),
+  oldest_first: msg("Oldest first"),
+};
+const isInboxSortOrder = Schema.is(InboxSortOrder);
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: msg("System default"),
@@ -490,6 +497,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
       : []),
+    ...(settings.sidebarInboxSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarInboxSortOrder
+      ? ["Inbox order"]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-settle inactive threads"]
       : []),
@@ -664,6 +674,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+      sidebarInboxSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarInboxSortOrder,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -882,8 +893,8 @@ export function GeneralSettingsPanel() {
           {...setting("working-shelf")}
           description={
             <T>
-              Fold working and monitoring threads into a Working section. They return to the top of
-              the inbox when they need you. The boring sidebar in Labs has no Working section.
+              Fold working and monitoring threads into a Working section. They return to the inbox
+              when they need you. The boring sidebar in Labs has no Working section.
             </T>
           }
           resetAction={
@@ -909,6 +920,52 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        {settings.sidebarWorkingShelfEnabled ? (
+          <SettingsRow
+            {...setting("inbox-order")}
+            description={
+              <T>
+                Order of inbox threads by when each last needed you. Oldest first works the inbox as
+                a queue.
+              </T>
+            }
+            resetAction={
+              settings.sidebarInboxSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarInboxSortOrder ? (
+                <SettingResetButton
+                  label="inbox order"
+                  onClick={() =>
+                    updateSettings({
+                      sidebarInboxSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarInboxSortOrder,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={settings.sidebarInboxSortOrder}
+                onValueChange={(value) => {
+                  if (isInboxSortOrder(value)) {
+                    updateSettings({ sidebarInboxSortOrder: value });
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full sm:w-44" aria-label={gt("Inbox order")}>
+                  <SelectValue>
+                    {m(INBOX_SORT_ORDER_LABELS[settings.sidebarInboxSortOrder])}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {InboxSortOrder.literals.map((sortOrder) => (
+                    <SelectItem hideIndicator key={sortOrder} value={sortOrder}>
+                      {m(INBOX_SORT_ORDER_LABELS[sortOrder])}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            }
+          />
+        ) : null}
       </SettingsSection>
 
       <SettingsSection id="confirmations" title={gt("Confirmations")}>
