@@ -521,6 +521,7 @@ export function HomeScreen(props: HomeScreenProps) {
   );
   const {
     loaded: shelfPreferencesLoaded,
+    inboxSortOrder,
     settledShelfExpanded,
     snoozedShelfExpanded,
     workingShelfEnabled,
@@ -616,11 +617,13 @@ export function HomeScreen(props: HomeScreenProps) {
       workingShelfEnabled,
       workingShelfExpanded,
       inboxReturnAt: threadListInboxReturns.returnedAt,
+      inboxSortOrder,
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey,
     });
   }, [
+    inboxSortOrder,
     workingShelfEnabled,
     workingShelfExpanded,
     pendingOrder,

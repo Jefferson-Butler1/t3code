@@ -2211,17 +2211,20 @@ describe("Working shelf (beta)", () => {
     });
 
     it("puts the thread that finished last on top, whatever its age", () => {
-      const sorted = sortInboxThreadsByReturn([
-        thread("new", { createdAt: "2026-03-09T11:00:00.000Z" }),
-        thread("old-finished-now", {
-          createdAt: "2026-03-01T09:00:00.000Z",
-          completedAt: "2026-03-09T12:00:00.000Z",
-        }),
-        thread("reopened", {
-          createdAt: "2026-03-02T09:00:00.000Z",
-          unsettledAt: "2026-03-09T11:30:00.000Z",
-        }),
-      ]);
+      const sorted = sortInboxThreadsByReturn(
+        [
+          thread("new", { createdAt: "2026-03-09T11:00:00.000Z" }),
+          thread("old-finished-now", {
+            createdAt: "2026-03-01T09:00:00.000Z",
+            completedAt: "2026-03-09T12:00:00.000Z",
+          }),
+          thread("reopened", {
+            createdAt: "2026-03-02T09:00:00.000Z",
+            unsettledAt: "2026-03-09T11:30:00.000Z",
+          }),
+        ],
+        "newest_first",
+      );
       expect(sorted.map((entry) => entry.id)).toEqual(["old-finished-now", "reopened", "new"]);
     });
 
@@ -2234,12 +2237,11 @@ describe("Working shelf (beta)", () => {
         createdAt: "2026-03-09T09:30:00.000Z",
         completedAt: "2026-03-09T11:00:00.000Z",
       });
-      expect(sortInboxThreadsByReturn([finished, waiting]).map((entry) => entry.id)).toEqual([
-        "finished",
-        "asks-approval",
-      ]);
       expect(
-        sortInboxThreadsByReturn([finished, waiting], (entry) =>
+        sortInboxThreadsByReturn([finished, waiting], "newest_first").map((entry) => entry.id),
+      ).toEqual(["finished", "asks-approval"]);
+      expect(
+        sortInboxThreadsByReturn([finished, waiting], "newest_first", (entry) =>
           entry === waiting ? Date.parse("2026-03-09T11:05:00.000Z") : undefined,
         ).map((entry) => entry.id),
       ).toEqual(["asks-approval", "finished"]);
