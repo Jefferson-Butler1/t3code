@@ -4,7 +4,7 @@ import { formatThreadLink, percentDecodedThreadLinkId } from "@t3tools/shared/th
 import { Link } from "@tanstack/react-router";
 import { MessageSquareTextIcon } from "lucide-react";
 
-import { useProject, useThreadShell } from "../../state/entities";
+import { useProject, useThreadShell, useThreadShells } from "../../state/entities";
 import { ProjectFavicon } from "../ProjectFavicon";
 
 export function MarkdownThreadLink(props: {
@@ -17,16 +17,24 @@ export function MarkdownThreadLink(props: {
   const decoded = useThreadShell(
     written === null && decodedId !== null ? scopeThreadRef(props.environmentId, decodedId) : null,
   );
-  const thread = written ?? decoded;
+  const local = written ?? decoded;
+  // Only an unresolved link subscribes to the full shell list.
+  const allShells = useThreadShells(local === null);
+  const thread =
+    local ??
+    allShells.find((shell) => shell.id === props.threadId) ??
+    (decodedId === null ? undefined : allShells.find((shell) => shell.id === decodedId)) ??
+    null;
   const threadId = thread?.id ?? props.threadId;
+  const environmentId = thread?.environmentId ?? props.environmentId;
   const project = useProject(
-    thread === null ? null : scopeProjectRef(props.environmentId, thread.projectId),
+    thread === null ? null : scopeProjectRef(environmentId, thread.projectId),
   );
   const title = thread?.title.trim() || props.label;
   return (
     <Link
       to="/$environmentId/$threadId"
-      params={{ environmentId: props.environmentId, threadId }}
+      params={{ environmentId, threadId }}
       title={thread === null ? "Thread no longer available" : project?.title}
       data-markdown-copy={formatThreadLink(threadId, title)}
     >

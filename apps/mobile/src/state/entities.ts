@@ -103,6 +103,20 @@ export function useChildThreadInputs(ref: ScopedThreadRef) {
   return useAtomValue(environmentThreadShells.childThreadInputsAtom(ref));
 }
 
+/** The environment holding a linked thread: `preferred` when it has the thread, else any
+    connected environment that does, so links Home writes to other machines still open. */
+export function readThreadLinkEnvironmentId(
+  threadId: ThreadId,
+  preferred: EnvironmentId,
+): EnvironmentId {
+  const shells = appAtomRegistry.get(environmentThreadShells.threadShellsAtom);
+  const matches = shells.filter((shell) => shell.id === threadId);
+  if (matches.length === 0 || matches.some((shell) => shell.environmentId === preferred)) {
+    return preferred;
+  }
+  return matches[0]!.environmentId;
+}
+
 export function useLiveThreadLinkLabels(markdown: string, environmentId: EnvironmentId): string {
   const titles = useAtomValue(
     hasThreadLinks(markdown) ? threadTitlesAtom(environmentId) : EMPTY_THREAD_TITLES_ATOM,
