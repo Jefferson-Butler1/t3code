@@ -1,3 +1,5 @@
+import type { InboxSortOrder } from "@t3tools/contracts";
+
 import { threadRuntimeIsActive, type EnvironmentThreadShell } from "./models.ts";
 import { toSortableTimestamp } from "./threadSort.ts";
 
@@ -33,8 +35,10 @@ type InboxThreadInput = Pick<
   "id" | "environmentId" | "createdAt" | "unsettledAt" | "latestRun"
 >;
 
+/** Newest first puts a thread that leaves Working on top; oldest first queues it at the bottom. */
 export function sortInboxThreadsByReturn<T extends InboxThreadInput>(
   threads: readonly T[],
+  order: InboxSortOrder,
   observedReturnAt?: (thread: T) => number | undefined,
 ): T[] {
   const timestamps = new Map(
@@ -49,7 +53,8 @@ export function sortInboxThreadsByReturn<T extends InboxThreadInput>(
       ),
     ]),
   );
-  return sortNewestFirst(threads, timestamps);
+  const sorted = sortNewestFirst(threads, timestamps);
+  return order === "oldest_first" ? sorted.reverse() : sorted;
 }
 
 type WorkingSortInput = Pick<

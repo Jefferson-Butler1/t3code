@@ -47,6 +47,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 
+import type { InboxSortOrder } from "@t3tools/contracts/settings";
 import { FolderIcon, ListFilterIcon, PlusIcon, SettingsIcon } from "lucide-react";
 import {
   useEffect,
@@ -296,6 +297,7 @@ interface SidebarThreadPartitionInput {
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly workingShelfEnabled: boolean;
+  readonly inboxSortOrder: InboxSortOrder;
   readonly homeThreadRef: ScopedThreadRef | null;
   // Snooze wakes and the queued-turn grace depend on the clock, so the minute
   // tick and the precise snooze-wake tick are inputs: a new key repartitions.
@@ -320,8 +322,10 @@ function resolveDraggedOrders(input: {
   readonly settledThreads: readonly EnvironmentThreadShell[];
   readonly activeThreads: readonly EnvironmentThreadShell[];
   readonly workingShelfEnabled: boolean;
+  readonly inboxSortOrder: InboxSortOrder;
 }): typeof NO_DRAGGED_ORDERS {
-  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled } = input;
+  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled, inboxSortOrder } =
+    input;
   const thread = threadByKey.get(drag.activeKey);
   if (thread === undefined) return NO_DRAGGED_ORDERS;
   const others = (list: readonly EnvironmentThreadShell[]) =>
@@ -334,6 +338,7 @@ function resolveDraggedOrders(input: {
     activeOrder: workingShelfEnabled
       ? sortInboxThreadsByReturn(
           [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
+          inboxSortOrder,
           inboxReturns.returnedAt,
         ).map(threadShellKey)
       : undefined,
@@ -384,6 +389,7 @@ function useSidebarThreads(input: {
           ),
         );
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
+  const inboxSortOrder = useClientSettings((s) => s.sidebarInboxSortOrder);
   const nowMinute = useNowMinute();
   // Snooze wake times are second-precise, so classifying with the quantized
   // minute would hold a woken thread on the shelf for up to a minute.
@@ -425,6 +431,7 @@ function useSidebarThreads(input: {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
+    inboxSortOrder,
     homeThreadRef,
     clockKey: `${nowMinute}:${snoozeWakeTick}`,
   });
@@ -475,6 +482,7 @@ function useSidebarThreads(input: {
     ...partition,
     threads,
     workingShelfEnabled,
+    inboxSortOrder,
     searchableThreads: [
       ...pinnedThreads,
       ...activeThreads,
@@ -521,6 +529,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
+    inboxSortOrder,
     homeThreadRef,
   } = input;
   const preciseNow = new Date().toISOString();
@@ -582,7 +591,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   // web and mobile from the same data.
   const sortedPinned = sortPinnedThreadsForSidebar(pinned);
   const sortedActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, inboxReturns.returnedAt)
+    ? sortInboxThreadsByReturn(active, inboxSortOrder, inboxReturns.returnedAt)
     : sortThreadsForSidebar(active);
   return {
     pinnedThreads:
@@ -1068,6 +1077,7 @@ export default function Sidebar() {
   const {
     threads,
     workingShelfEnabled,
+    inboxSortOrder,
     pinnedThreads,
     draggableThreadKeys,
     activeReorderableThreadKeys,
@@ -1729,6 +1739,7 @@ export default function Sidebar() {
           settledThreads,
           activeThreads,
           workingShelfEnabled,
+          inboxSortOrder,
         });
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
