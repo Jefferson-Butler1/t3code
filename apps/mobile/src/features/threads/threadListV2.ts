@@ -24,7 +24,7 @@ import {
   sortPinnedThreadsByOrderKey,
   sortSettledThreads,
 } from "@t3tools/client-runtime/state/thread-sort";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, InboxSortOrder, ProjectId } from "@t3tools/contracts";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
 import type { ThreadMoveAvailability } from "./threadOrder";
@@ -585,6 +585,7 @@ export function buildThreadListV2Items(input: {
   readonly workingShelfEnabled?: boolean;
   readonly workingShelfExpanded?: boolean;
   readonly inboxReturnAt?: (thread: EnvironmentThreadShell) => number | undefined;
+  readonly inboxSortOrder?: InboxSortOrder;
   readonly snoozedShelfExpanded?: boolean;
   readonly settledShelfExpanded?: boolean;
   readonly selectedThreadKey?: string | null;
@@ -663,7 +664,7 @@ export function buildThreadListV2Items(input: {
   }
 
   const orderedActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
+    ? sortInboxThreadsByReturn(active, input.inboxSortOrder ?? "newest_first", input.inboxReturnAt)
     : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
   const orderedWorking = sortWorkingThreadsBySend(working);
   const orderedSnoozed = [...snoozed].sort(
