@@ -29,6 +29,7 @@ import {
   type ChatWidth,
   type DiffLayout,
   type EnvironmentIdentificationMode,
+  InboxSortOrder,
   MAX_APPEARANCE_CONTRAST,
   MAX_CODE_FONT_SIZE,
   MAX_GLASS_OPACITY,
@@ -196,6 +197,12 @@ const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string>
   manual: "Manual",
 };
 const isSidebarProjectSortOrder = Schema.is(SidebarProjectSortOrder);
+
+const INBOX_SORT_ORDER_LABELS: Record<InboxSortOrder, string> = {
+  newest_first: "Newest first",
+  oldest_first: "Oldest first",
+};
+const isInboxSortOrder = Schema.is(InboxSortOrder);
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -574,6 +581,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
       : []),
+    ...(settings.sidebarInboxSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarInboxSortOrder
+      ? ["Inbox order"]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-settle inactive threads"]
       : []),
@@ -743,6 +753,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+      sidebarInboxSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarInboxSortOrder,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -2278,7 +2289,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("working-shelf")}
-          description="Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you."
+          description="Fold working and monitoring threads into a Working section. They return to the inbox when they need you."
           resetAction={
             settings.sidebarWorkingShelfEnabled !==
             DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
@@ -2302,6 +2313,47 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        {settings.sidebarWorkingShelfEnabled ? (
+          <SettingsRow
+            {...searchableSetting("inbox-order")}
+            description="Order of inbox threads by when each last needed you. Oldest first works the inbox as a queue."
+            resetAction={
+              settings.sidebarInboxSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarInboxSortOrder ? (
+                <SettingResetButton
+                  label="inbox order"
+                  onClick={() =>
+                    updateSettings({
+                      sidebarInboxSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarInboxSortOrder,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={settings.sidebarInboxSortOrder}
+                onValueChange={(value) => {
+                  if (isInboxSortOrder(value)) {
+                    updateSettings({ sidebarInboxSortOrder: value });
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Inbox order">
+                  <SelectValue>
+                    {INBOX_SORT_ORDER_LABELS[settings.sidebarInboxSortOrder]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {InboxSortOrder.literals.map((sortOrder) => (
+                    <SelectItem hideIndicator key={sortOrder} value={sortOrder}>
+                      {INBOX_SORT_ORDER_LABELS[sortOrder]}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            }
+          />
+        ) : null}
 
         <SettingsRow
           serverScoped

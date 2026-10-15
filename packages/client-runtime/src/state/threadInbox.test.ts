@@ -1,7 +1,11 @@
 import { EnvironmentId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { createInboxReturnTracker, sortWorkingThreadsBySend } from "./threadInbox.ts";
+import {
+  createInboxReturnTracker,
+  sortInboxThreadsByReturn,
+  sortWorkingThreadsBySend,
+} from "./threadInbox.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
 
@@ -79,5 +83,29 @@ describe("sortWorkingThreadsBySend", () => {
     expect(
       sortWorkingThreadsBySend([launched, sentFirst, sentLast]).map((thread) => thread.id),
     ).toEqual(["sent-last", "sent-first", "launched"]);
+  });
+});
+
+describe("sortInboxThreadsByReturn", () => {
+  it("orders by return time in the chosen direction", () => {
+    const returnedFirst = {
+      ...thread("returned-first", false),
+      unsettledAt: "2026-06-01T01:00:00.000Z",
+    };
+    const returnedLast = {
+      ...thread("returned-last", false),
+      unsettledAt: "2026-06-01T02:00:00.000Z",
+    };
+    // Seen by this client leaving the Working section after both.
+    const observed = thread("observed", false);
+    const observedAt = (candidate: { readonly id: string }) =>
+      candidate.id === "observed" ? Date.parse("2026-06-01T03:00:00.000Z") : undefined;
+    const threads = [returnedLast, observed, returnedFirst];
+    expect(
+      sortInboxThreadsByReturn(threads, "newest_first", observedAt).map((thread) => thread.id),
+    ).toEqual(["observed", "returned-last", "returned-first"]);
+    expect(
+      sortInboxThreadsByReturn(threads, "oldest_first", observedAt).map((thread) => thread.id),
+    ).toEqual(["returned-first", "returned-last", "observed"]);
   });
 });
