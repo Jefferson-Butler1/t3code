@@ -1,4 +1,4 @@
-From 2d514d8539569d4f63c163b54748e6dc86320eb6 Mon Sep 17 00:00:00 2001
+From b0ff2c733da394c913d1d53472bb8d40daa7e932 Mon Sep 17 00:00:00 2001
 From: Jefferson-Butler1 <jefferson.butler@icloud.com>
 Date: Thu, 15 Oct 2026 12:24:45 -0700
 Subject: [PATCH] fix(web,mobile): thread links open threads on other machines
@@ -8,13 +8,13 @@ environment, so a link Home writes to a thread on another machine showed
 "Thread no longer available". A link that misses there now looks the id up
 in every connected environment.
 ---
- .../mobile/src/features/threads/ThreadFeed.tsx |  7 ++++---
- apps/mobile/src/state/entities.ts              | 14 ++++++++++++++
- .../src/components/chat/MarkdownThreadLink.tsx | 18 ++++++++++++++----
- 3 files changed, 32 insertions(+), 7 deletions(-)
+ apps/mobile/src/features/threads/ThreadFeed.tsx  |  4 ++--
+ apps/mobile/src/state/entities.ts                | 14 ++++++++++++++
+ .../src/components/chat/MarkdownThreadLink.tsx   | 16 ++++++++++++----
+ 3 files changed, 28 insertions(+), 6 deletions(-)
 
 diff --git a/apps/mobile/src/features/threads/ThreadFeed.tsx b/apps/mobile/src/features/threads/ThreadFeed.tsx
-index d47466ecc3..eaf12e8f84 100644
+index a0cb6ee339..20ff96940f 100644
 --- a/apps/mobile/src/features/threads/ThreadFeed.tsx
 +++ b/apps/mobile/src/features/threads/ThreadFeed.tsx
 @@ -209,7 +209,7 @@ import {
@@ -26,13 +26,7 @@ index d47466ecc3..eaf12e8f84 100644
  import { useThreadSelection } from "../../state/use-thread-selection";
  import { composerDocumentAttachmentRecord } from "../../lib/composerContext";
  import * as Option from "effect/Option";
-@@ -1824,11 +1824,12 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
-   const userBubbleColor = theme["--color-user-bubble"];
-   const onMarkdownLinkPress = useCallback(
-     (href: string, imageEmbed = false) => {
--      // A thread link names a thread in this feed's environment.
-+      // A thread link names a thread in this feed's environment, or in another
-+      // connected one when Home links a thread on a different machine.
+@@ -1790,7 +1790,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
        const linkedThreadId = parseThreadLinkHref(href);
        if (linkedThreadId) {
          navigation.navigate("Thread", {
@@ -42,10 +36,10 @@ index d47466ecc3..eaf12e8f84 100644
          });
          return;
 diff --git a/apps/mobile/src/state/entities.ts b/apps/mobile/src/state/entities.ts
-index b8e42b0cb9..e0c2b2acc4 100644
+index 144325fb2d..a47aaa6713 100644
 --- a/apps/mobile/src/state/entities.ts
 +++ b/apps/mobile/src/state/entities.ts
-@@ -102,6 +102,20 @@ export function useChildThreadInputs(ref: ScopedThreadRef) {
+@@ -103,6 +103,20 @@ export function useChildThreadInputs(ref: ScopedThreadRef) {
    return useAtomValue(environmentThreadShells.childThreadInputsAtom(ref));
  }
  
@@ -63,11 +57,11 @@ index b8e42b0cb9..e0c2b2acc4 100644
 +  return matches[0]!.environmentId;
 +}
 +
- /** `markdown` with each thread link labeled by the thread's current title in `environmentId`. */
  export function useLiveThreadLinkLabels(markdown: string, environmentId: EnvironmentId): string {
    const titles = useAtomValue(
+     hasThreadLinks(markdown) ? threadTitlesAtom(environmentId) : EMPTY_THREAD_TITLES_ATOM,
 diff --git a/apps/web/src/components/chat/MarkdownThreadLink.tsx b/apps/web/src/components/chat/MarkdownThreadLink.tsx
-index 4b1b44d7c6..6bbe4c3488 100644
+index 6979e868db..4032f92bdc 100644
 --- a/apps/web/src/components/chat/MarkdownThreadLink.tsx
 +++ b/apps/web/src/components/chat/MarkdownThreadLink.tsx
 @@ -4,7 +4,7 @@ import { formatThreadLink, percentDecodedThreadLinkId } from "@t3tools/shared/th
@@ -78,17 +72,8 @@ index 4b1b44d7c6..6bbe4c3488 100644
 +import { useProject, useThreadShell, useThreadShells } from "../../state/entities";
  import { ProjectFavicon } from "../ProjectFavicon";
  
- /**
-@@ -12,6 +12,8 @@ import { ProjectFavicon } from "../ProjectFavicon";
-  * reaches every message that links to it, and leads with the thread's project icon
-  * the way a web link leads with its favicon. `label` is what the message wrote,
-  * shown only when this client cannot see the thread. Opens the thread in the app.
-+ * A thread missing from the message's environment is looked up in every connected
-+ * one, so links Home writes to threads on other machines still open.
-  */
  export function MarkdownThreadLink(props: {
-   readonly environmentId: EnvironmentId;
-@@ -23,16 +25,24 @@ export function MarkdownThreadLink(props: {
+@@ -17,16 +17,24 @@ export function MarkdownThreadLink(props: {
    const decoded = useThreadShell(
      written === null && decodedId !== null ? scopeThreadRef(props.environmentId, decodedId) : null,
    );
@@ -113,9 +98,9 @@ index 4b1b44d7c6..6bbe4c3488 100644
        to="/$environmentId/$threadId"
 -      params={{ environmentId: props.environmentId, threadId }}
 +      params={{ environmentId, threadId }}
-       // Like an attached thread chip: archived threads are not in the index but still open.
        title={thread === null ? "Thread no longer available" : project?.title}
        data-markdown-copy={formatThreadLink(threadId, title)}
+     >
 -- 
 2.56.0
 
