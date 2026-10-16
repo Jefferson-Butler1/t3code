@@ -1,4 +1,4 @@
-From f16ac93af1cbfa645b9bb5f2cb9a050cf7c8ed31 Mon Sep 17 00:00:00 2001
+From 58e65dc6aba61a3a6f34eb569414a4d6fa14c08c Mon Sep 17 00:00:00 2001
 From: Jefferson-Butler1 <jefferson.butler@icloud.com>
 Date: Wed, 7 Oct 2026 10:04:05 -0700
 Subject: [PATCH] feat(home): add Home, an agent that manages threads across
@@ -40,7 +40,7 @@ preview browser, and the snooze/link work that already landed in #16782.
  .../src/mcp/toolkits/project/handlers.test.ts | 121 ++++
  .../src/mcp/toolkits/project/handlers.ts      | 106 +++-
  apps/server/src/mcp/toolkits/project/tools.ts |  28 +-
- .../src/mcp/toolkits/thread/handlers.ts       |  47 +-
+ .../src/mcp/toolkits/thread/handlers.ts       |  46 +-
  apps/server/src/mcp/toolkits/thread/tools.ts  |  84 +--
  .../toolkits/worktree/registration.test.ts    |   2 +
  .../src/observability/RpcInstrumentation.ts   |   7 +
@@ -48,7 +48,7 @@ preview browser, and the snooze/link work that already landed in #16782.
  .../src/orchestration-v2/runtimeLayer.test.ts |  56 ++
  .../testkit/OrchestratorScenario.ts           |   1 +
  .../src/project/ManagedProjectFolders.test.ts |  28 +
- .../src/project/ManagedProjectFolders.ts      | 147 ++++-
+ .../src/project/ManagedProjectFolders.ts      | 143 +++++
  apps/server/src/server.ts                     |   2 +
  apps/server/src/ws.ts                         |  32 +-
  apps/web/src/AppRoot.tsx                      |   2 +
@@ -56,16 +56,16 @@ preview browser, and the snooze/link work that already landed in #16782.
  apps/web/src/components/CommandPalette.tsx    |  67 ++-
  apps/web/src/components/Sidebar.logic.test.ts |  19 +
  apps/web/src/components/Sidebar.logic.ts      |  19 +-
- apps/web/src/components/Sidebar.tsx           | 234 ++++++--
+ apps/web/src/components/Sidebar.tsx           | 225 +++++--
  .../ThreadNotificationCoordinator.tsx         |  19 +-
  apps/web/src/components/chat/ChatHeader.tsx   |  39 +-
- .../src/components/chat/DraftHeroHeadline.tsx |  18 +-
+ .../src/components/chat/DraftHeroHeadline.tsx |  16 +-
  .../src/components/chat/MessagesTimeline.tsx  |  11 +-
  .../web/src/components/home/HomeFleetHost.tsx | 216 +++++++
  .../web/src/components/home/homeWatch.test.ts | 153 +++++
  apps/web/src/components/home/homeWatch.ts     | 152 +++++
  .../src/components/settings/HomeSettings.tsx  | 291 +++++++++
- .../settings/SettingsScopeSentence.tsx        |   6 +-
+ .../settings/SettingsScopeSentence.tsx        |   1 +
  .../settings/SettingsSidebarNav.tsx           |  14 +-
  .../src/components/settings/settingsSearch.ts |  11 +
  apps/web/src/hooks/useHandleNewThread.test.ts |   1 +
@@ -88,13 +88,13 @@ preview browser, and the snooze/link work that already landed in #16782.
  packages/contracts/src/ipc.ts                 |   2 +
  packages/contracts/src/keybindings.ts         |   1 +
  packages/contracts/src/orchestrationV2.ts     |   6 +
- packages/contracts/src/orchestratorMcp.ts     |  32 +-
- packages/contracts/src/rpc.ts                 |  68 +++
- packages/contracts/src/server.ts              |   5 +
+ packages/contracts/src/orchestratorMcp.ts     |  30 +-
+ packages/contracts/src/rpc.ts                 |  67 +++
+ packages/contracts/src/server.ts              |   2 +
  packages/contracts/src/settings.ts            |   8 +
  packages/contracts/src/threadMetadataMcp.ts   |   2 +
  packages/shared/src/keybindings.ts            |   1 +
- 85 files changed, 5071 insertions(+), 294 deletions(-)
+ 85 files changed, 5057 insertions(+), 281 deletions(-)
  create mode 100644 apps/desktop/src/ipc/methods/keepAliveOnClose.ts
  create mode 100644 apps/server/src/home/FleetBroker.test.ts
  create mode 100644 apps/server/src/home/FleetBroker.ts
@@ -198,10 +198,10 @@ index 0000000000..60bebe688d
 +  }),
 +});
 diff --git a/apps/desktop/src/preload.ts b/apps/desktop/src/preload.ts
-index efd49ffa38..e05e94af20 100644
+index 2e046b7f23..e631c8aaec 100644
 --- a/apps/desktop/src/preload.ts
 +++ b/apps/desktop/src/preload.ts
-@@ -88,6 +88,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
+@@ -86,6 +86,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
    getClientPlatform: () => clientPlatform,
    setNotificationBadge: (badge) =>
      ipcRenderer.invoke(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, badge),
@@ -211,10 +211,10 @@ index efd49ffa38..e05e94af20 100644
      const handler = () => listener();
      ipcRenderer.on(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, handler);
 diff --git a/apps/desktop/src/window/DesktopWindow.test.ts b/apps/desktop/src/window/DesktopWindow.test.ts
-index c9a49b1d73..7570a9cc5b 100644
+index d17b530a86..879ac9f07a 100644
 --- a/apps/desktop/src/window/DesktopWindow.test.ts
 +++ b/apps/desktop/src/window/DesktopWindow.test.ts
-@@ -426,6 +426,7 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
+@@ -421,6 +421,7 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
              recordMetrics: () => Effect.void,
              shutdown: Effect.void,
            }),
@@ -223,7 +223,7 @@ index c9a49b1d73..7570a9cc5b 100644
            DesktopAppSettings.layerTest(),
            layerDesktopClientSettings,
 diff --git a/apps/desktop/src/window/DesktopWindow.ts b/apps/desktop/src/window/DesktopWindow.ts
-index 75393d54a1..fdc0d37115 100644
+index d9f9805eda..43394cb898 100644
 --- a/apps/desktop/src/window/DesktopWindow.ts
 +++ b/apps/desktop/src/window/DesktopWindow.ts
 @@ -12,6 +12,7 @@ import { type DesktopSnapShotEvent, DEFAULT_CLIENT_SETTINGS } from "@t3tools/con
@@ -234,15 +234,15 @@ index 75393d54a1..fdc0d37115 100644
  import { makeComponentLogger } from "../app/DesktopObservability.ts";
  import * as ElectronMenu from "../electron/ElectronMenu.ts";
  import { getDesktopUrl } from "../electron/ElectronProtocol.ts";
-@@ -334,6 +335,7 @@ export const make = Effect.gen(function* () {
+@@ -298,6 +299,7 @@ export const make = Effect.gen(function* () {
    const clientSettings = yield* DesktopClientSettings.DesktopClientSettings;
    const electronApp = yield* ElectronApp.ElectronApp;
    const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
 +  const desktopState = yield* DesktopState.DesktopState;
-   // Window-side latch for the primary backend's readiness. Set by
-   // handleBackendReady (driven by the pool's onReady callback), cleared
-   // by handleBackendNotReady (driven by onShutdown). Only consumed by
-@@ -703,8 +705,17 @@ export const make = Effect.gen(function* () {
+   const backendReadyRef = yield* Ref.make(false);
+   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
+@@ -654,8 +656,17 @@ export const make = Effect.gen(function* () {
      window.on("move", scheduleBoundsPersist);
      window.on("maximize", scheduleBoundsPersist);
      window.on("unmaximize", scheduleBoundsPersist);
@@ -262,10 +262,10 @@ index 75393d54a1..fdc0d37115 100644
  
      if (environment.platform === "darwin") {
 diff --git a/apps/server/src/auth/RpcAuthorization.ts b/apps/server/src/auth/RpcAuthorization.ts
-index 5b8d483dc1..b497227ecf 100644
+index b558c08bca..e952cd26c9 100644
 --- a/apps/server/src/auth/RpcAuthorization.ts
 +++ b/apps/server/src/auth/RpcAuthorization.ts
-@@ -198,6 +198,14 @@ export const RPC_REQUIRED_SCOPES = {
+@@ -190,6 +190,14 @@ export const RPC_REQUIRED_SCOPES = {
    [WS_METHODS.previewClearProfile]: AuthPreviewOperateScope,
    [WS_METHODS.previewReportProfiles]: AuthPreviewOperateScope,
    [WS_METHODS.previewReportStatus]: AuthPreviewOperateScope,
@@ -2096,7 +2096,7 @@ index 0000000000..fe3361e786
 +  Layer.mock(FleetBroker.FleetBroker)({}),
 +);
 diff --git a/apps/server/src/mcp/McpHttpServer.ts b/apps/server/src/mcp/McpHttpServer.ts
-index 64e8a344cd..3daca1904a 100644
+index cd2ccf1416..f2a6808d3c 100644
 --- a/apps/server/src/mcp/McpHttpServer.ts
 +++ b/apps/server/src/mcp/McpHttpServer.ts
 @@ -29,6 +29,8 @@ import * as PreviewControlsHandlers from "./toolkits/previewControls/handlers.ts
@@ -2108,7 +2108,7 @@ index 64e8a344cd..3daca1904a 100644
  import * as ProjectHandlers from "./toolkits/project/handlers.ts";
  import { AttachmentToolkit } from "./toolkits/attachment/tools.ts";
  import * as AttachmentHandlers from "./toolkits/attachment/handlers.ts";
-@@ -833,6 +835,8 @@ export const layerEnvironmentToolkit = toolkitRegistration(
+@@ -799,6 +801,8 @@ export const layerEnvironmentToolkit = toolkitRegistration(
  
  const layerProjectRegistration = toolkitRegistration(ProjectToolkit, ProjectHandlers.layer);
  
@@ -2117,7 +2117,7 @@ index 64e8a344cd..3daca1904a 100644
  export const layerAttachmentToolkit = toolkitRegistration(
    AttachmentToolkit,
    AttachmentHandlers.layer,
-@@ -872,6 +876,7 @@ export const layer = Layer.mergeAll(
+@@ -838,6 +842,7 @@ export const layer = Layer.mergeAll(
    layerThreadToolkit,
    layerAttachmentToolkit,
    layerProjectRegistration,
@@ -2126,7 +2126,7 @@ index 64e8a344cd..3daca1904a 100644
    layerPreviewControlsRegistration,
    layerWorktreeToolkitRegistration,
 diff --git a/apps/server/src/mcp/OrchestratorMcpService.ts b/apps/server/src/mcp/OrchestratorMcpService.ts
-index 5c0a93cb1c..478a39973e 100644
+index 9378251eb9..3c7ac81582 100644
 --- a/apps/server/src/mcp/OrchestratorMcpService.ts
 +++ b/apps/server/src/mcp/OrchestratorMcpService.ts
 @@ -52,6 +52,7 @@ import {
@@ -2137,7 +2137,7 @@ index 5c0a93cb1c..478a39973e 100644
    type RuntimeMode,
    type ScheduledTask,
    type ScheduledTaskUpsertInput,
-@@ -204,7 +205,7 @@ function failure(code: OrchestratorMcpFailure["code"], message: string): Orchest
+@@ -200,7 +201,7 @@ function failure(code: OrchestratorMcpFailure["code"], message: string): Orchest
    return new OrchestratorMcpFailure({ code, message });
  }
  
@@ -2146,7 +2146,7 @@ index 5c0a93cb1c..478a39973e 100644
    if (!isThreadManagementError(error)) return failure("orchestration_error", errorMessage(error));
    switch (error._tag) {
      case "ThreadManagementThreadNotFoundError":
-@@ -266,6 +267,46 @@ function scheduledTaskSummary(task: ScheduledTask, mayRun: boolean): Orchestrato
+@@ -251,6 +252,46 @@ function scheduledTaskSummary(task: ScheduledTask, mayRun: boolean): Orchestrato
    };
  }
  
@@ -2193,7 +2193,7 @@ index 5c0a93cb1c..478a39973e 100644
  function providerConstraints(
    provider: ServerProvider | undefined,
    supportsOrchestrationV2: boolean,
-@@ -684,7 +725,7 @@ function taskPrompt(input: OrchestratorMcpDelegateTaskInput): string {
+@@ -657,7 +698,7 @@ function taskPrompt(input: OrchestratorMcpDelegateTaskInput): string {
      : `Act as the ${input.role} sub-agent for this task.\n\n${input.task}`;
  }
  
@@ -2202,7 +2202,7 @@ index 5c0a93cb1c..478a39973e 100644
    thread: Pick<OrchestrationV2ThreadShell, "settledOverride" | "settledAt">,
  ): Pick<OrchestratorMcpThreadListItem, "settled" | "settledAt"> {
    const settled = thread.settledOverride === "settled";
-@@ -706,12 +747,13 @@ function threadSnooze(
+@@ -679,12 +720,13 @@ function threadSnooze(
    };
  }
  
@@ -2217,7 +2217,7 @@ index 5c0a93cb1c..478a39973e 100644
      title: shell.title,
      createdBy: shell.createdBy,
      creationSource: shell.creationSource,
-@@ -902,6 +944,68 @@ function timelineItem(input: {
+@@ -874,6 +916,68 @@ function timelineItem(input: {
    };
  }
  
@@ -2286,7 +2286,7 @@ index 5c0a93cb1c..478a39973e 100644
  const make = Effect.gen(function* () {
    const crypto = yield* Crypto.Crypto;
    const threadManagement = yield* ThreadManagementService.ThreadManagementService;
-@@ -1931,38 +2035,11 @@ const make = Effect.gen(function* () {
+@@ -1855,38 +1959,11 @@ const make = Effect.gen(function* () {
            inheritedModel: parent?.thread.modelSelection.model ?? null,
            runtimeMode: limits.runtimeMode,
            interactionMode: limits.interactionMode,
@@ -2330,7 +2330,7 @@ index 5c0a93cb1c..478a39973e 100644
            features: {
              appOwnedSubagents: true,
              asyncPolling: true,
-@@ -2473,6 +2550,9 @@ const make = Effect.gen(function* () {
+@@ -2381,6 +2458,9 @@ const make = Effect.gen(function* () {
              (thread) =>
                statuses === null || statuses.has(thread.activityRunStatus ?? thread.status),
            )
@@ -2340,7 +2340,7 @@ index 5c0a93cb1c..478a39973e 100644
            .filter(
              (thread) =>
                input.settled === undefined || threadSettlement(thread).settled === input.settled,
-@@ -2500,36 +2580,8 @@ const make = Effect.gen(function* () {
+@@ -2408,36 +2488,8 @@ const make = Effect.gen(function* () {
      readThread: (scope, input) =>
        Effect.gen(function* () {
          const { parent, target, shell } = yield* loadReadableThread(scope, input.threadId);
@@ -2378,7 +2378,7 @@ index 5c0a93cb1c..478a39973e 100644
          const returnedRunIds = new Set(
            page
              .filter((row) => row.sourceThreadId === target.thread.id)
-@@ -2574,23 +2626,7 @@ const make = Effect.gen(function* () {
+@@ -2482,23 +2534,7 @@ const make = Effect.gen(function* () {
              }
            }
          }
@@ -2404,7 +2404,7 @@ index 5c0a93cb1c..478a39973e 100644
      sendToThread: (scope, input) =>
        Effect.gen(function* () {
 diff --git a/apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts b/apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
-index c518fd4594..c7a56b0d4f 100644
+index 1e7ce5a4ff..24863464fd 100644
 --- a/apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
 +++ b/apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
 @@ -79,6 +79,7 @@ import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts
@@ -2415,7 +2415,7 @@ index c518fd4594..c7a56b0d4f 100644
  import * as McpInvocationContext from "./McpInvocationContext.ts";
  import { delegatedTaskRun, hasPendingChildRuns } from "./OrchestratorMcpService.ts";
  import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-@@ -695,6 +696,7 @@ describe("orchestrator MCP toolkit", () => {
+@@ -683,6 +684,7 @@ describe("orchestrator MCP toolkit", () => {
            ).pipe(
              Layer.provideMerge(McpServer.McpServer.layer),
              Layer.provideMerge(layerOrchestration),
@@ -2423,7 +2423,7 @@ index c518fd4594..c7a56b0d4f 100644
              Layer.provide(layerRegistry),
              Layer.provide(layerProviderRegistry),
              Layer.provide(ServerSettings.layerTest()),
-@@ -3909,6 +3911,7 @@ describe("orchestrator MCP toolkit", () => {
+@@ -3798,6 +3800,7 @@ describe("orchestrator MCP toolkit", () => {
          const layerTest = layerOrchestratorToolkit.pipe(
            Layer.provideMerge(McpServer.McpServer.layer),
            Layer.provideMerge(layerOrchestration),
@@ -2432,7 +2432,7 @@ index c518fd4594..c7a56b0d4f 100644
              CodexOrchestratorReplayHarness.makeProviderAdapterRegistryLayer(transcript).pipe(
                Layer.provide(McpProviderSessions.layer),
 diff --git a/apps/server/src/mcp/ThreadMetadataMcpService.ts b/apps/server/src/mcp/ThreadMetadataMcpService.ts
-index a997e2ede4..7c8f54110f 100644
+index 74176ec90c..8f36c748e0 100644
 --- a/apps/server/src/mcp/ThreadMetadataMcpService.ts
 +++ b/apps/server/src/mcp/ThreadMetadataMcpService.ts
 @@ -107,7 +107,7 @@ function metadataCommand(input: {
@@ -2682,7 +2682,7 @@ index 0000000000..34342df83b
 +  return Option.none<FleetResult<Op>>();
 +});
 diff --git a/apps/server/src/mcp/toolkits/core.test.ts b/apps/server/src/mcp/toolkits/core.test.ts
-index 92a179c113..45c6ab113e 100644
+index 45ea89082f..a3c230c143 100644
 --- a/apps/server/src/mcp/toolkits/core.test.ts
 +++ b/apps/server/src/mcp/toolkits/core.test.ts
 @@ -46,6 +46,7 @@ import * as SecretRequests from "../../secrets/SecretRequests.ts";
@@ -2693,7 +2693,7 @@ index 92a179c113..45c6ab113e 100644
  import * as McpInvocationContext from "../McpInvocationContext.ts";
  import * as McpToolAccessTestkit from "../McpToolAccess.testkit.ts";
  import { dispatchFailure } from "../threadAccess.ts";
-@@ -177,6 +178,7 @@ it.effect("checks capability through the production registration", () =>
+@@ -174,6 +175,7 @@ it.effect("checks capability through the production registration", () =>
          Layer.provideMerge(McpServer.McpServer.layer),
          Layer.provide(NodeCrypto.layer),
          Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
@@ -2701,7 +2701,7 @@ index 92a179c113..45c6ab113e 100644
        ),
      ),
    ),
-@@ -217,6 +219,7 @@ it.effect("returns a bounded public failure without serializing storage causes",
+@@ -214,6 +216,7 @@ it.effect("returns a bounded public failure without serializing storage causes",
        layerThreadToolkit.pipe(
          Layer.provideMerge(McpServer.McpServer.layer),
          Layer.provide(NodeCrypto.layer),
@@ -2709,7 +2709,7 @@ index 92a179c113..45c6ab113e 100644
          Layer.provide(
            Layer.mock(ThreadManagement.ThreadManagementService)({
              getThreadShell: () =>
-@@ -331,6 +334,7 @@ it.effect("returns invalid parameter errors through the production registration"
+@@ -326,6 +329,7 @@ it.effect("returns invalid parameter errors through the production registration"
      Effect.provide(
        layerThreadToolkit.pipe(
          Layer.provideMerge(McpServer.McpServer.layer),
@@ -2717,7 +2717,7 @@ index 92a179c113..45c6ab113e 100644
          Layer.provide(NodeCrypto.layer),
          Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
        ),
-@@ -356,6 +360,7 @@ it.effect("keeps unexpected handler defects private through the production regis
+@@ -351,6 +355,7 @@ it.effect("keeps unexpected handler defects private through the production regis
      Effect.provide(
        layerThreadToolkit.pipe(
          Layer.provideMerge(McpServer.McpServer.layer),
@@ -2725,7 +2725,7 @@ index 92a179c113..45c6ab113e 100644
          Layer.provide(NodeCrypto.layer),
          Layer.provide(
            Layer.mock(ThreadManagement.ThreadManagementService)({
-@@ -474,6 +479,7 @@ it.effect("a client caller targets any thread within its ceiling and cannot act
+@@ -469,6 +474,7 @@ it.effect("a client caller targets any thread within its ceiling and cannot act
      Effect.provide(
        layerThreadToolkit.pipe(
          Layer.provideMerge(McpServer.McpServer.layer),
@@ -2733,7 +2733,7 @@ index 92a179c113..45c6ab113e 100644
          Layer.provide(NodeCrypto.layer),
          Layer.provide(
            Layer.mock(ThreadManagement.ThreadManagementService)({
-@@ -534,6 +540,7 @@ it.effect("a read-only client reads threads and is refused every write before it
+@@ -529,6 +535,7 @@ it.effect("a read-only client reads threads and is refused every write before it
      Effect.provide(
        layerThreadToolkit.pipe(
          Layer.provideMerge(McpServer.McpServer.layer),
@@ -2741,7 +2741,7 @@ index 92a179c113..45c6ab113e 100644
          Layer.provide(NodeCrypto.layer),
          Layer.provide(
            Layer.mock(ThreadManagement.ThreadManagementService)({
-@@ -587,6 +594,7 @@ it.effect("refuses act-as-caller tools to a client caller", () =>
+@@ -582,6 +589,7 @@ it.effect("refuses act-as-caller tools to a client caller", () =>
      Effect.provide(
        layerOrchestratorToolkit.pipe(
          Layer.provideMerge(McpServer.McpServer.layer),
@@ -2749,7 +2749,7 @@ index 92a179c113..45c6ab113e 100644
          Layer.provide(NodeCrypto.layer),
          Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
          Layer.provide(ServerSettings.layerTest()),
-@@ -626,6 +634,7 @@ it.effect("a caller cannot rewrite a scheduled task that runs above its own mode
+@@ -621,6 +629,7 @@ it.effect("a caller cannot rewrite a scheduled task that runs above its own mode
      Effect.provide(
        layerOrchestratorToolkit.pipe(
          Layer.provideMerge(McpServer.McpServer.layer),
@@ -2757,7 +2757,7 @@ index 92a179c113..45c6ab113e 100644
          Layer.provide(NodeCrypto.layer),
          Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
          Layer.provide(ServerSettings.layerTest()),
-@@ -701,6 +710,7 @@ it.effect.each(["t3_thread_interrupt", "t3_workflow_stop"])(
+@@ -696,6 +705,7 @@ it.effect.each(["t3_thread_interrupt", "t3_workflow_stop"])(
        Effect.provide(
          layerOrchestratorToolkit.pipe(
            Layer.provideMerge(McpServer.McpServer.layer),
@@ -2765,7 +2765,7 @@ index 92a179c113..45c6ab113e 100644
            Layer.provide(NodeCrypto.layer),
            Layer.provide(
              Layer.mock(ThreadManagement.ThreadManagementService)({
-@@ -805,6 +815,7 @@ it.effect("discovers workflow stop targets and requires orchestration capability
+@@ -800,6 +810,7 @@ it.effect("discovers workflow stop targets and requires orchestration capability
      Effect.provide(
        layerOrchestratorToolkit.pipe(
          Layer.provideMerge(McpServer.McpServer.layer),
@@ -2933,7 +2933,7 @@ index 0000000000..17afa8c133
 +
 +export const HomeToolkit = Toolkit.make(EnvironmentListTool, ThreadWatchTool);
 diff --git a/apps/server/src/mcp/toolkits/orchestrator/handlers.ts b/apps/server/src/mcp/toolkits/orchestrator/handlers.ts
-index fa84ce59ee..b489c09fcc 100644
+index 7c05b33004..8cc6451eef 100644
 --- a/apps/server/src/mcp/toolkits/orchestrator/handlers.ts
 +++ b/apps/server/src/mcp/toolkits/orchestrator/handlers.ts
 @@ -1,6 +1,9 @@
@@ -2969,7 +2969,7 @@ index fa84ce59ee..b489c09fcc 100644
      }),
    ),
    delegate_task: McpToolAccess.actsAsCaller((input) =>
-@@ -97,6 +108,12 @@ const handlers = {
+@@ -96,6 +107,12 @@ const handlers = {
    ),
    create_threads: McpToolAccess.actsAsCaller((input) =>
      Effect.gen(function* () {
@@ -2982,7 +2982,7 @@ index fa84ce59ee..b489c09fcc 100644
        const scope = yield* McpInvocationContext.McpInvocationContext;
        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
        return yield* service.createThreads(scope, input);
-@@ -104,6 +121,8 @@ const handlers = {
+@@ -103,6 +120,8 @@ const handlers = {
    ),
    t3_thread_list: McpToolAccess.reads((input) =>
      Effect.gen(function* () {
@@ -2991,8 +2991,8 @@ index fa84ce59ee..b489c09fcc 100644
        const scope = yield* McpInvocationContext.McpInvocationContext;
        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
        return yield* service.listThreads(scope, input);
-@@ -114,6 +133,8 @@ const handlers = {
-   // a change to anything it reads, so this stays a read.
+@@ -110,6 +129,8 @@ const handlers = {
+   ),
    t3_thread_read: McpToolAccess.reads((input) =>
      Effect.gen(function* () {
 +      const routed = yield* routeHome(input.environmentId, "threads.read", input);
@@ -3000,7 +3000,7 @@ index fa84ce59ee..b489c09fcc 100644
        const scope = yield* McpInvocationContext.McpInvocationContext;
        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
        return yield* service.readThread(scope, input);
-@@ -124,6 +145,25 @@ const handlers = {
+@@ -120,6 +141,25 @@ const handlers = {
      (input) =>
        Effect.gen(function* () {
          const scope = yield* McpInvocationContext.McpInvocationContext;
@@ -3026,7 +3026,7 @@ index fa84ce59ee..b489c09fcc 100644
          const service = yield* ThreadMetadataMcpService.ThreadMetadataMcpService;
          return yield* service.update(scope, input);
        }),
-@@ -132,6 +172,8 @@ const handlers = {
+@@ -128,6 +168,8 @@ const handlers = {
      (input) => [input.threadId],
      (input) =>
        Effect.gen(function* () {
@@ -3035,7 +3035,7 @@ index fa84ce59ee..b489c09fcc 100644
          const scope = yield* McpInvocationContext.McpInvocationContext;
          const service = yield* OrchestratorMcpService.OrchestratorMcpService;
          return yield* service.sendToThread(scope, input);
-@@ -148,6 +190,8 @@ const handlers = {
+@@ -144,6 +186,8 @@ const handlers = {
      (input) => [input.threadId],
      (input) =>
        Effect.gen(function* () {
@@ -3057,7 +3057,7 @@ index b8f735069d..0857847295 100644
        "action",
        "title",
 diff --git a/apps/server/src/mcp/toolkits/orchestrator/tools.ts b/apps/server/src/mcp/toolkits/orchestrator/tools.ts
-index 36c4d78723..cb8f512e57 100644
+index e4da1f51ed..bfd784f8e2 100644
 --- a/apps/server/src/mcp/toolkits/orchestrator/tools.ts
 +++ b/apps/server/src/mcp/toolkits/orchestrator/tools.ts
 @@ -9,6 +9,7 @@ import {
@@ -3137,8 +3137,8 @@ index 36c4d78723..cb8f512e57 100644
 +  dependencies: [...dependencies, ...homeRoutedDependencies],
  })
    .annotate(Tool.Title, "Read a T3 thread")
-   // Strict so a misspelled paging param fails instead of silently reading from position 0.
-@@ -222,12 +230,12 @@ const ThreadReadTool = Tool.make("t3_thread_read", {
+   .annotate(Tool.Strict, true)
+@@ -221,12 +229,12 @@ const ThreadReadTool = Tool.make("t3_thread_read", {
  
  export const ThreadUpdateTool = Tool.make("t3_thread_update", {
    description:
@@ -3153,7 +3153,7 @@ index 36c4d78723..cb8f512e57 100644
  })
    .annotate(Tool.Title, "Update T3 thread metadata")
    .annotate(Tool.Destructive, true)
-@@ -235,12 +243,12 @@ export const ThreadUpdateTool = Tool.make("t3_thread_update", {
+@@ -234,12 +242,12 @@ export const ThreadUpdateTool = Tool.make("t3_thread_update", {
  
  const ThreadSendTool = Tool.make("t3_thread_send", {
    description:
@@ -3168,7 +3168,7 @@ index 36c4d78723..cb8f512e57 100644
  })
    .annotate(Tool.Title, "Send to a T3 thread")
    .annotate(Tool.Destructive, true)
-@@ -262,12 +270,12 @@ const ThreadWaitTool = Tool.make("t3_thread_wait", {
+@@ -261,12 +269,12 @@ const ThreadWaitTool = Tool.make("t3_thread_wait", {
  
  const ThreadInterruptTool = Tool.make("t3_thread_interrupt", {
    description:
@@ -3184,7 +3184,7 @@ index 36c4d78723..cb8f512e57 100644
    .annotate(Tool.Title, "Interrupt a T3 thread")
    .annotate(Tool.Destructive, true);
 diff --git a/apps/server/src/mcp/toolkits/project/handlers.test.ts b/apps/server/src/mcp/toolkits/project/handlers.test.ts
-index 7b045ae6b1..d2e16020d1 100644
+index 29a8305358..bb6461ffff 100644
 --- a/apps/server/src/mcp/toolkits/project/handlers.test.ts
 +++ b/apps/server/src/mcp/toolkits/project/handlers.test.ts
 @@ -1,6 +1,8 @@
@@ -3349,7 +3349,7 @@ index 7b045ae6b1..d2e16020d1 100644
        Layer.succeed(McpInvocationContext.McpInvocationContext, {
          environmentId: EnvironmentId.make("environment"),
          requestNamespace: "session",
-@@ -318,6 +438,7 @@ const clientLaunchHarness = (input: {
+@@ -313,6 +433,7 @@ const clientLaunchHarness = (input: {
    const layerDependencies = Layer.mergeAll(
      ServerSettings.layerTest(),
      NodeCrypto.layer,
@@ -3358,7 +3358,7 @@ index 7b045ae6b1..d2e16020d1 100644
        environmentId: EnvironmentId.make("environment"),
        requestNamespace: "client:session-1",
 diff --git a/apps/server/src/mcp/toolkits/project/handlers.ts b/apps/server/src/mcp/toolkits/project/handlers.ts
-index c346ad6200..ffb70d1d27 100644
+index ca47192c98..dcf96a1452 100644
 --- a/apps/server/src/mcp/toolkits/project/handlers.ts
 +++ b/apps/server/src/mcp/toolkits/project/handlers.ts
 @@ -1,7 +1,17 @@
@@ -3380,7 +3380,7 @@ index c346ad6200..ffb70d1d27 100644
  import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
  import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
  import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
-@@ -52,17 +62,59 @@ const access = Effect.gen(function* () {
+@@ -50,17 +60,59 @@ const access = Effect.gen(function* () {
    yield* readCaller();
    return yield* Project.ProjectService;
  });
@@ -3444,7 +3444,7 @@ index c346ad6200..ffb70d1d27 100644
          if (attachments.some((attachment) => !Claims.attachmentIsPendingUpload(attachment)))
            return yield* new OrchestratorMcpFailure({
              code: "invalid_request",
-@@ -77,6 +129,40 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
+@@ -75,6 +127,40 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
              message:
                "scratch:true picks its own project and folder; omit projectId and workspaceStrategy.",
            });
@@ -3485,7 +3485,7 @@ index c346ad6200..ffb70d1d27 100644
          const projectId =
            input.scratch === true
              ? (yield* ManagedProjectFolders.ManagedProjectFolders.pipe(
-@@ -135,6 +221,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
+@@ -133,6 +219,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
              message:
                "Pass modelSelection: the project has no default model. orchestrator_capabilities lists providers and models.",
            });
@@ -3494,7 +3494,7 @@ index c346ad6200..ffb70d1d27 100644
          const result = yield* ThreadMessageIntake.launchThread({
            commandId,
            threadId,
-@@ -186,6 +274,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
+@@ -184,6 +272,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
    ),
    t3_project_list: McpToolAccess.reads((input) =>
      Effect.gen(function* () {
@@ -3503,7 +3503,7 @@ index c346ad6200..ffb70d1d27 100644
        const projects = yield* access;
        const snapshot = yield* projects.snapshot.pipe(Effect.mapError(unavailable));
        const rows = snapshot.projects.filter((project) => project.deletedAt === null);
-@@ -260,6 +350,12 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
+@@ -258,6 +348,12 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
    ),
    t3_project_delete: McpToolAccess.writesEnvironment((input) =>
      Effect.gen(function* () {
@@ -3599,7 +3599,7 @@ index e455c041c4..da06a31239 100644
      ...shared.dependencies,
      ThreadLaunchService.ThreadLaunchService,
 diff --git a/apps/server/src/mcp/toolkits/thread/handlers.ts b/apps/server/src/mcp/toolkits/thread/handlers.ts
-index f54065c082..e6c62e28da 100644
+index e1bf858ca8..0e3ae4f358 100644
 --- a/apps/server/src/mcp/toolkits/thread/handlers.ts
 +++ b/apps/server/src/mcp/toolkits/thread/handlers.ts
 @@ -1,5 +1,6 @@
@@ -3626,10 +3626,10 @@ index f54065c082..e6c62e28da 100644
  import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
  import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
  import { queuedRunsInDeliveryOrder } from "../../../orchestration-v2/QueuedRunOrder.ts";
-@@ -71,6 +75,18 @@ const readQuestion = Effect.fn("mcp.readQuestion")(function* (input: {
+@@ -70,6 +74,18 @@ const readQuestion = Effect.fn("mcp.readQuestion")(function* (input: {
+     });
    return { ...context, request, item };
  });
- /** A tool that changes `threadId`, or the caller's own thread when it is omitted. */
 +/** Home's thread when it names none in its own environment; another environment needs one. */
 +const defaultThreadId = Effect.fn("mcp.defaultThreadId")(function* (input: {
 +  readonly environmentId?: EnvironmentId | undefined;
@@ -3645,18 +3645,17 @@ index f54065c082..e6c62e28da 100644
  const writesThread = <P extends { readonly threadId?: ThreadId | undefined }, A, E, R>(
    handle: (params: P) => Effect.Effect<A, E, R>,
  ) => McpToolAccess.writesThreads((params: P) => [params.threadId], handle);
-@@ -102,8 +118,8 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
+@@ -100,7 +116,8 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
+     Effect.gen(function* () {
        const { caller } = yield* readCaller();
        const { projectId: requested, ...query } = input;
-       // Like the other project tools, an omitted project means the caller's own; a client
--      // outside a thread searches every project.
 -      const projectId = requested ?? caller?.projectId;
-+      // outside a thread, or Home, searches every project.
++      // Home searches every project.
 +      const projectId = requested ?? ((yield* callerIsHome()) ? undefined : caller?.projectId);
        const threadSearch = yield* ThreadSearch.ThreadSearch;
        const result = yield* threadSearch.search(query).pipe(Effect.mapError(unavailable));
        return {
-@@ -202,6 +218,11 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
+@@ -199,6 +216,11 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
    ),
    t3_pending_request_list: McpToolAccess.reads((input) =>
      Effect.gen(function* () {
@@ -3668,7 +3667,7 @@ index f54065c082..e6c62e28da 100644
        const { projection } = yield* readThread(input.threadId, ["runtimeRequests"]);
        return {
          requestIds: projection.runtimeRequests
-@@ -212,12 +233,27 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
+@@ -209,12 +231,27 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
    ),
    t3_pending_request_read: McpToolAccess.reads((input) =>
      Effect.gen(function* () {
@@ -3697,7 +3696,7 @@ index f54065c082..e6c62e28da 100644
        const { threads, projection } = yield* readQuestion(input);
        const result = yield* threads
          .dispatch({
-@@ -292,6 +328,11 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
+@@ -289,6 +326,11 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
    ),
    t3_thread_organize: writesThread((input) =>
      Effect.gen(function* () {
@@ -3859,7 +3858,7 @@ index b5fb7d6be3..606978082d 100644
    .annotate(Tool.Readonly, true)
    .annotate(Tool.Destructive, false);
 diff --git a/apps/server/src/mcp/toolkits/worktree/registration.test.ts b/apps/server/src/mcp/toolkits/worktree/registration.test.ts
-index c0006f7fe1..44e8cc5ed5 100644
+index 1598031d50..97a075f853 100644
 --- a/apps/server/src/mcp/toolkits/worktree/registration.test.ts
 +++ b/apps/server/src/mcp/toolkits/worktree/registration.test.ts
 @@ -30,6 +30,7 @@ import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
@@ -3879,10 +3878,10 @@ index c0006f7fe1..44e8cc5ed5 100644
  
  const ToolsListPayload = Schema.fromJsonString(
 diff --git a/apps/server/src/observability/RpcInstrumentation.ts b/apps/server/src/observability/RpcInstrumentation.ts
-index 167ce8d11f..e0bf4daf9f 100644
+index 161694d55c..2b31ac8f87 100644
 --- a/apps/server/src/observability/RpcInstrumentation.ts
 +++ b/apps/server/src/observability/RpcInstrumentation.ts
-@@ -208,6 +208,13 @@ const RPC_AGGREGATES = {
+@@ -209,6 +209,13 @@ const RPC_AGGREGATES = {
    [WS_METHODS.subscribeServerLifecycle]: "server",
    [WS_METHODS.subscribeAuthAccess]: "auth",
    [WS_METHODS.subscribeBackgroundPolicy]: "server",
@@ -3897,10 +3896,10 @@ index 167ce8d11f..e0bf4daf9f 100644
  
  const RPC_SPAN_PREFIX = "ws.rpc";
 diff --git a/apps/server/src/orchestration-v2/Orchestrator.ts b/apps/server/src/orchestration-v2/Orchestrator.ts
-index a0e1c1fc78..81776f3978 100644
+index 8369af77fd..91f65b63c6 100644
 --- a/apps/server/src/orchestration-v2/Orchestrator.ts
 +++ b/apps/server/src/orchestration-v2/Orchestrator.ts
-@@ -484,6 +484,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
+@@ -464,6 +464,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
      case "run.interrupt":
      case "queued-message.promote-to-steer":
      case "queue.resume":
@@ -3908,7 +3907,7 @@ index a0e1c1fc78..81776f3978 100644
      case "queued-run.reorder":
      case "queued-run.cancel":
      case "queued-run.edit":
-@@ -11031,6 +11032,38 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
+@@ -10870,6 +10871,38 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
          }
          break;
        }
@@ -3948,10 +3947,10 @@ index a0e1c1fc78..81776f3978 100644
          yield* dispatchQueuedRunReorder(command, events);
          break;
 diff --git a/apps/server/src/orchestration-v2/runtimeLayer.test.ts b/apps/server/src/orchestration-v2/runtimeLayer.test.ts
-index d86a042e17..86f52311f3 100644
+index 0eb6579e20..126aad9a5e 100644
 --- a/apps/server/src/orchestration-v2/runtimeLayer.test.ts
 +++ b/apps/server/src/orchestration-v2/runtimeLayer.test.ts
-@@ -4199,6 +4199,62 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
+@@ -4148,6 +4148,62 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
      }),
    );
  
@@ -4015,10 +4014,10 @@ index d86a042e17..86f52311f3 100644
      "preserves and holds queued messages across %s until explicitly resumed",
      (trigger) =>
 diff --git a/apps/server/src/orchestration-v2/testkit/OrchestratorScenario.ts b/apps/server/src/orchestration-v2/testkit/OrchestratorScenario.ts
-index c43c17e012..25863a4d50 100644
+index 7588837610..b09340f51d 100644
 --- a/apps/server/src/orchestration-v2/testkit/OrchestratorScenario.ts
 +++ b/apps/server/src/orchestration-v2/testkit/OrchestratorScenario.ts
-@@ -170,6 +170,7 @@ function commandThreadIds(command: OrchestrationV2Command): ReadonlyArray<Thread
+@@ -167,6 +167,7 @@ function commandThreadIds(command: OrchestrationV2Command): ReadonlyArray<Thread
      case "run.interrupt":
      case "queued-message.promote-to-steer":
      case "queue.resume":
@@ -4027,10 +4026,10 @@ index c43c17e012..25863a4d50 100644
      case "queued-run.cancel":
      case "queued-run.edit":
 diff --git a/apps/server/src/project/ManagedProjectFolders.test.ts b/apps/server/src/project/ManagedProjectFolders.test.ts
-index 2ff9246018..0484773c1f 100644
+index 453cf4431b..f63c6ce6f2 100644
 --- a/apps/server/src/project/ManagedProjectFolders.test.ts
 +++ b/apps/server/src/project/ManagedProjectFolders.test.ts
-@@ -133,6 +133,21 @@ it.effect("offers a Scratch folder under the data dir when it is outside a check
+@@ -123,6 +123,21 @@ it.effect("offers a Scratch folder under the data dir when it is outside a check
    ),
  );
  
@@ -4052,7 +4051,7 @@ index 2ff9246018..0484773c1f 100644
  it.effect("offers nothing when the data dir sits inside a Git checkout", () =>
    Effect.gen(function* () {
      const fileSystem = yield* FileSystem.FileSystem;
-@@ -603,3 +618,16 @@ it.effect("removes the folder when the repository cannot be made", () =>
+@@ -577,3 +592,16 @@ it.effect("removes the folder when the repository cannot be made", () =>
      },
    ),
  );
@@ -4070,21 +4069,10 @@ index 2ff9246018..0484773c1f 100644
 +  assert.isNull(ManagedProjectFolders.refreshHomeAgents("# My own file\n"));
 +});
 diff --git a/apps/server/src/project/ManagedProjectFolders.ts b/apps/server/src/project/ManagedProjectFolders.ts
-index 5a394b8206..beffdcf9e1 100644
+index 406758cfab..1251d96420 100644
 --- a/apps/server/src/project/ManagedProjectFolders.ts
 +++ b/apps/server/src/project/ManagedProjectFolders.ts
-@@ -5,7 +5,9 @@
-  * - `<baseDir>/scratch`: the Scratch project ("No project"), with a folder of
-  *   its own for each thread;
-  * - `<baseDir>/projects/<slug>`: projects started from just a name, each a new
-- *   Git repository with a README, an icon, and a first commit.
-+ *   Git repository with a README, an icon, and a first commit;
-+ * - `<baseDir>/home`: Home's folder, one Git repository every Home thread
-+ *   shares so its notes and instructions survive a fresh start.
-  *
-  * @module ManagedProjectFolders
-  */
-@@ -131,6 +133,19 @@ export class ManagedProjectFolders extends Context.Service<
+@@ -109,6 +109,19 @@ export class ManagedProjectFolders extends Context.Service<
        },
        NamedProjectError
      >;
@@ -4104,7 +4092,7 @@ index 5a394b8206..beffdcf9e1 100644
    }
  >()("t3/project/ManagedProjectFolders") {}
  
-@@ -213,6 +228,47 @@ function namedProjectReadme(name: string): string {
+@@ -187,6 +200,47 @@ function namedProjectReadme(name: string): string {
    ].join("\n");
  }
  
@@ -4149,10 +4137,10 @@ index 5a394b8206..beffdcf9e1 100644
 +  return next === current ? null : next;
 +}
 +
- // Git's own identity message runs several lines; say what to do instead.
- // Otherwise its last line ("error: gpg failed to sign the data") says enough.
  function describeCommitFailure(stderr: string): string {
-@@ -515,12 +571,101 @@ const make = Effect.gen(function* () {
+   if (/identity unknown|tell me who you are|no (name|email) was given/i.test(stderr)) {
+     return "Git has no name or email on this machine. Set user.name and user.email, then commit.";
+@@ -464,12 +518,101 @@ const make = Effect.gen(function* () {
      };
    });
  
@@ -4255,10 +4243,10 @@ index 5a394b8206..beffdcf9e1 100644
  });
  
 diff --git a/apps/server/src/server.ts b/apps/server/src/server.ts
-index 23981a932e..02ea8c81ce 100644
+index 104541ea41..a8be494e22 100644
 --- a/apps/server/src/server.ts
 +++ b/apps/server/src/server.ts
-@@ -64,6 +64,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
+@@ -65,6 +65,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
  import * as McpHttpServer from "./mcp/McpHttpServer.ts";
  import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
  import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -4266,8 +4254,8 @@ index 23981a932e..02ea8c81ce 100644
  import * as DeviceService from "./device/DeviceService.ts";
  import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";
  import * as PreviewManager from "./preview/Manager.ts";
-@@ -741,6 +742,7 @@ const layerMakeRoutes = Layer.mergeAll(
-   // Server browser tabs and HTML render previews install and run the same headless browser.
+@@ -698,6 +699,7 @@ const layerMakeRoutes = Layer.mergeAll(
+   Layer.provide(ServerBrowser.layer.pipe(Layer.provide(DesktopBrowserChannel.layer))),
    Layer.provide(PreviewBrowser.layer),
    Layer.provide(PreviewAutomationBroker.layer),
 +  Layer.provide(HomeLayer),
@@ -4275,7 +4263,7 @@ index 23981a932e..02ea8c81ce 100644
    Layer.provide(layerCommandReadiness),
    Layer.provide(ServerHttp.layerBrowserApiCors),
 diff --git a/apps/server/src/ws.ts b/apps/server/src/ws.ts
-index 96994ee37c..6b6ac50265 100644
+index 84cfb8430f..9b7b793dcd 100644
 --- a/apps/server/src/ws.ts
 +++ b/apps/server/src/ws.ts
 @@ -100,6 +100,7 @@ import {
@@ -4286,7 +4274,7 @@ index 96994ee37c..6b6ac50265 100644
    WsRpcGroup,
  } from "@t3tools/contracts";
  import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
-@@ -181,6 +182,9 @@ import * as TerminalManager from "./terminal/Manager.ts";
+@@ -183,6 +184,9 @@ import * as TerminalManager from "./terminal/Manager.ts";
  import { withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";
  import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
  import * as ServerBrowser from "./preview/ServerBrowser.ts";
@@ -4296,7 +4284,7 @@ index 96994ee37c..6b6ac50265 100644
  import * as DeviceService from "./device/DeviceService.ts";
  import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
  import * as PreviewManager from "./preview/Manager.ts";
-@@ -1221,6 +1225,9 @@ const layerWsRpc = (
+@@ -1180,6 +1184,9 @@ const layerWsRpc = (
        const projectService = yield* ProjectService.ProjectService;
        const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
        const threadSearch = yield* ThreadSearch.ThreadSearch;
@@ -4306,7 +4294,7 @@ index 96994ee37c..6b6ac50265 100644
  
        const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
        const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
-@@ -1753,6 +1760,7 @@ const layerWsRpc = (
+@@ -1707,6 +1714,7 @@ const layerWsRpc = (
                onSome: (root) => ({ scratchWorkspaceRoot: root }),
              }),
              newProjectsRoot: managedFolders.namedProjectsRoot,
@@ -4314,8 +4302,8 @@ index 96994ee37c..6b6ac50265 100644
            };
          });
  
-@@ -2416,8 +2424,10 @@ const layerWsRpc = (
-         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
+@@ -2371,8 +2379,10 @@ const layerWsRpc = (
+         [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
          [WS_METHODS.serverGetSettings]: (_input) =>
            serverSettings.getSettings.pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
 -        [WS_METHODS.serverUpdateSettings]: ({ patch, providerInstanceMutation }) =>
@@ -4326,7 +4314,7 @@ index 96994ee37c..6b6ac50265 100644
              const deviceHosts = patch.deviceHosts
                ? yield* remoteSshDeviceHosts(patch.deviceHosts).pipe(
                    Effect.provide(deviceHostContext),
-@@ -2936,6 +2946,20 @@ const layerWsRpc = (
+@@ -2884,6 +2894,20 @@ const layerWsRpc = (
          [WS_METHODS.previewClearProfile]: (input) => serverBrowser.clearProfile(input.profileId),
          [WS_METHODS.previewReportProfiles]: (input) => serverBrowser.reportProfiles(input),
          [WS_METHODS.previewReportStatus]: (input) => previewManager.reportStatus(input),
@@ -4347,7 +4335,7 @@ index 96994ee37c..6b6ac50265 100644
          [WS_METHODS.subscribePreviewEvents]: (_input) => previewManager.events,
          [WS_METHODS.deviceConfigure]: (input) => deviceService.configure(input),
          [WS_METHODS.deviceTestHost]: (input) => deviceService.testHost(input),
-@@ -3165,6 +3189,11 @@ export const layer = Layer.unwrap(
+@@ -3107,6 +3131,11 @@ export const layer = Layer.unwrap(
    Effect.gen(function* () {
      const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
      const serverBrowser = yield* ServerBrowser.ServerBrowser;
@@ -4359,7 +4347,7 @@ index 96994ee37c..6b6ac50265 100644
      const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
      const pullRequests = yield* PullRequestService.PullRequestService;
      const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
-@@ -3228,6 +3257,7 @@ export const layer = Layer.unwrap(
+@@ -3170,6 +3199,7 @@ export const layer = Layer.unwrap(
                // their defects, not the rest of the server's.
                Layer.provide(DefectReporter.layer),
                Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
@@ -4368,7 +4356,7 @@ index 96994ee37c..6b6ac50265 100644
                Layer.provide(ProviderMaintenanceRunner.layer),
                Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
 diff --git a/apps/web/src/AppRoot.tsx b/apps/web/src/AppRoot.tsx
-index 1ec12cfdd7..ae530d4fe6 100644
+index df610d8e1a..8dc4e8c919 100644
 --- a/apps/web/src/AppRoot.tsx
 +++ b/apps/web/src/AppRoot.tsx
 @@ -2,6 +2,7 @@ import { RouterProvider } from "@tanstack/react-router";
@@ -4388,10 +4376,10 @@ index 1ec12cfdd7..ae530d4fe6 100644
        <BrowserProfileReporter />
        <QuitHoldOverlay />
 diff --git a/apps/web/src/components/ChatView.tsx b/apps/web/src/components/ChatView.tsx
-index 0a6d9d6d68..637e8572b4 100644
+index 8a0777d92d..553d637fd9 100644
 --- a/apps/web/src/components/ChatView.tsx
 +++ b/apps/web/src/components/ChatView.tsx
-@@ -7280,9 +7280,15 @@ export default function ChatView(props: ChatViewProps) {
+@@ -7059,9 +7059,15 @@ export default function ChatView(props: ChatViewProps) {
    };
    const handleStopBackgroundWorkStable = useStableCallback(handleStopBackgroundWork);
    const onOpenRelatedThread = (threadId: ThreadId) => {
@@ -4409,7 +4397,7 @@ index 0a6d9d6d68..637e8572b4 100644
    };
    const onOpenRelatedThreadStable = useStableCallback(onOpenRelatedThread);
 diff --git a/apps/web/src/components/CommandPalette.tsx b/apps/web/src/components/CommandPalette.tsx
-index 6596e451e3..6c0ccfd2af 100644
+index 33612cce3d..aec326a864 100644
 --- a/apps/web/src/components/CommandPalette.tsx
 +++ b/apps/web/src/components/CommandPalette.tsx
 @@ -66,6 +66,7 @@ import {
@@ -4443,7 +4431,7 @@ index 6596e451e3..6c0ccfd2af 100644
  import {
    applyProviderInstanceSettings,
    deriveProviderInstanceEntries,
-@@ -387,6 +393,11 @@ export function CommandPalette({ children }: { children: ReactNode }) {
+@@ -386,6 +392,11 @@ export function CommandPalette({ children }: { children: ReactNode }) {
    const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
    const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
    const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -4455,7 +4443,7 @@ index 6596e451e3..6c0ccfd2af 100644
    const { theme, themeHalves, resolvedTheme, appearanceMode, setAppearanceMode } = useTheme();
    const composerHandleRef = useRef<ChatComposerHandle | null>(null);
    const routeTarget = useParams({
-@@ -472,6 +483,17 @@ export function CommandPalette({ children }: { children: ReactNode }) {
+@@ -469,6 +480,17 @@ export function CommandPalette({ children }: { children: ReactNode }) {
          void navigate({ to: "/usage" });
          return;
        }
@@ -4473,7 +4461,7 @@ index 6596e451e3..6c0ccfd2af 100644
        const mode = overlayModeForCommand(command);
        if (mode === null) {
          return;
-@@ -484,8 +506,10 @@ export function CommandPalette({ children }: { children: ReactNode }) {
+@@ -481,8 +503,10 @@ export function CommandPalette({ children }: { children: ReactNode }) {
      return () => window.removeEventListener("keydown", onKeyDown);
    }, [
      appearanceMode,
@@ -4484,7 +4472,7 @@ index 6596e451e3..6c0ccfd2af 100644
      previewOpen,
      resolvedTheme,
      setAppearanceMode,
-@@ -643,6 +667,14 @@ function OpenCommandPaletteDialog(props: {
+@@ -636,6 +660,14 @@ function OpenCommandPaletteDialog(props: {
    const { environments } = useEnvironments();
    const desktopLocalBootstraps = useDesktopLocalBootstraps();
    const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -4499,7 +4487,7 @@ index 6596e451e3..6c0ccfd2af 100644
    const availableSettingsSearchItems = useAvailableSettingsSearchItems();
    const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
      useHandleNewThread();
-@@ -1196,10 +1228,16 @@ function OpenCommandPaletteDialog(props: {
+@@ -1171,10 +1203,16 @@ function OpenCommandPaletteDialog(props: {
      ],
    );
  
@@ -4517,7 +4505,7 @@ index 6596e451e3..6c0ccfd2af 100644
          valuePrefix: "project",
          searchTerms: (project) => {
            const members = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`)
-@@ -1234,6 +1272,7 @@ function OpenCommandPaletteDialog(props: {
+@@ -1209,6 +1247,7 @@ function OpenCommandPaletteDialog(props: {
          runProject: openProjectFromSearch,
        }),
      [
@@ -4525,10 +4513,10 @@ index 6596e451e3..6c0ccfd2af 100644
        openProjectFromSearch,
        pickerProjects,
        projectEnvironmentLocationById,
-@@ -1247,7 +1286,9 @@ function OpenCommandPaletteDialog(props: {
+@@ -1221,7 +1260,9 @@ function OpenCommandPaletteDialog(props: {
+       isScratchProject(project, scratchWorkspaceRootFor(project.environmentId));
      const projectItems = enumerateCommandPaletteItems(
        buildProjectActionItems({
-         // The no-project home shows once, as the "No project" item below.
 -        projects: pickerProjects.filter((project) => !isScratch(project)),
 +        projects: pickerProjects.filter(
 +          (project) => !isScratch(project) && !isPrimaryHomeProject(project),
@@ -4536,7 +4524,7 @@ index 6596e451e3..6c0ccfd2af 100644
          valuePrefix: "new-thread-in",
          searchTerms: (project) => {
            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-@@ -1322,6 +1363,7 @@ function OpenCommandPaletteDialog(props: {
+@@ -1292,6 +1333,7 @@ function OpenCommandPaletteDialog(props: {
    }, [
      contextualProjectRef,
      handleNewThread,
@@ -4544,7 +4532,7 @@ index 6596e451e3..6c0ccfd2af 100644
      pickerProjects,
      projectEnvironmentLocationById,
      projectGroupByTargetKey,
-@@ -2233,6 +2275,23 @@ function OpenCommandPaletteDialog(props: {
+@@ -2188,6 +2230,23 @@ function OpenCommandPaletteDialog(props: {
      },
    });
  
@@ -4569,7 +4557,7 @@ index 6596e451e3..6c0ccfd2af 100644
      kind: "action",
      value: "action:settings",
 diff --git a/apps/web/src/components/Sidebar.logic.test.ts b/apps/web/src/components/Sidebar.logic.test.ts
-index 616ff8c4ec..32f99b69f8 100644
+index e8149ae002..454dc07ac2 100644
 --- a/apps/web/src/components/Sidebar.logic.test.ts
 +++ b/apps/web/src/components/Sidebar.logic.test.ts
 @@ -447,6 +447,25 @@ describe("sidebar thread lineage helpers", () => {
@@ -4599,10 +4587,10 @@ index 616ff8c4ec..32f99b69f8 100644
      const parentId = ThreadId.make("thread-parent");
      const subagent = makeThreadFixture({
 diff --git a/apps/web/src/components/Sidebar.logic.ts b/apps/web/src/components/Sidebar.logic.ts
-index bc86619108..ca4b62c6c8 100644
+index 2334b679b3..add2937bf5 100644
 --- a/apps/web/src/components/Sidebar.logic.ts
 +++ b/apps/web/src/components/Sidebar.logic.ts
-@@ -567,16 +567,29 @@ export function isSidebarSubagentThread(thread: Pick<SidebarThreadSummary, "line
+@@ -517,16 +517,29 @@ export function isSidebarSubagentThread(thread: Pick<SidebarThreadSummary, "line
    return thread.lineage.relationshipToParent === "subagent";
  }
  
@@ -4634,7 +4622,7 @@ index bc86619108..ca4b62c6c8 100644
        (scopedProjectKeys === null ||
          scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
    );
-@@ -1407,7 +1420,7 @@ export function sortLogicalProjectsForSidebar<
+@@ -1309,7 +1322,7 @@ export function sortLogicalProjectsForSidebar<
  
  export function sortSidebarV2ProjectGroups<
    TProject extends LogicalSidebarProject,
@@ -4644,7 +4632,7 @@ index bc86619108..ca4b62c6c8 100644
    projects: readonly TProject[],
    threads: readonly TThread[],
 diff --git a/apps/web/src/components/Sidebar.tsx b/apps/web/src/components/Sidebar.tsx
-index 65c00d70e3..a7da51c5cc 100644
+index f59084188a..a64f8e9605 100644
 --- a/apps/web/src/components/Sidebar.tsx
 +++ b/apps/web/src/components/Sidebar.tsx
 @@ -15,6 +15,7 @@ import { discardComposerDraft } from "../lib/discardComposerDraft";
@@ -4691,7 +4679,7 @@ index 65c00d70e3..a7da51c5cc 100644
    resolveThreadLastVisitedAt,
    searchSidebarThreads,
    shouldCreateNewThreadInCurrentProject,
-@@ -1111,6 +1122,108 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
+@@ -1035,6 +1046,108 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
    ),
  };
  
@@ -4800,28 +4788,20 @@ index 65c00d70e3..a7da51c5cc 100644
  const SidebarThreadRow = memo(function SidebarThreadRow(props: {
    thread: SidebarThreadSummary;
    variant: "card" | "slim";
-@@ -1297,64 +1410,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
+@@ -1186,56 +1299,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
      isActive: props.isActive,
      isSelected,
    });
--  // Status hues follow the system-wide convention set by sidebar v1 and the
--  // mobile Live Activity/widgets (amber approval, indigo input, sky working)
--  // so a thread reads the same color everywhere it surfaces.
 +  const topStatusKind = resolveSidebarV2TopStatus({ status, isUnread, isWoke });
    const topStatus =
 -    status === "working"
 -      ? {
--          // A native /goal keeps the agent going across turns until it is met.
 -          label: thread.goal?.status === "active" ? "Goal" : "Working",
 -          icon: "working" as const,
--          // No shimmer: a label that animates forever is noise in a sidebar
--          // full of them (and repaints every vsync on high-refresh displays).
 -          className: "text-info",
 -        }
 -      : status === "waiting"
 -        ? {
--            // Waiting is calm background presence (post-settle background
--            // roster), not active progress, so the label keeps full strength.
 -            label: "Waiting",
 -            icon: "waiting" as const,
 -            className: "text-muted-foreground",
@@ -4865,14 +4845,13 @@ index 65c00d70e3..a7da51c5cc 100644
 -                    : null;
 +    topStatusKind === null
 +      ? null
-+      : // A native /goal keeps the agent going across turns until it is met.
-+        topStatusKind === "working" && thread.goal?.status === "active"
++      : topStatusKind === "working" && thread.goal?.status === "active"
 +        ? { ...SIDEBAR_TOP_STATUS.working, label: "Goal" }
 +        : SIDEBAR_TOP_STATUS[topStatusKind];
    const isWokeStatus = topStatus?.icon === "woke";
  
    const branchMismatch = resolveLocalCheckoutBranchMismatch({
-@@ -2519,6 +2582,23 @@ export default function Sidebar() {
+@@ -2333,6 +2403,23 @@ export default function Sidebar() {
    const environments = useEnvironmentIdentities();
    const serverConfigs = useAtomValue(environmentServerConfigsAtom);
    const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -4896,7 +4875,7 @@ index 65c00d70e3..a7da51c5cc 100644
    const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
    const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
    const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
-@@ -2615,12 +2695,23 @@ export default function Sidebar() {
+@@ -2414,12 +2501,23 @@ export default function Sidebar() {
    const projectScopeItems = useMemo(
      () => [
        { value: "all", label: "All projects" },
@@ -4923,12 +4902,12 @@ index 65c00d70e3..a7da51c5cc 100644
 -    [projectGroups],
 +    [homeWorkspaceRoot, primaryEnvironmentId, projectGroups],
    );
-   // Same-named projects on two machines are only told apart by where they
-   // live, so rows on another machine carry its icon once the catalog spans
-@@ -2817,7 +2908,13 @@ export default function Sidebar() {
+   const showProjectEnvironments = useMemo(
+     () => projectGroupsSpanEnvironments(projectGroups),
+@@ -2586,7 +2684,13 @@ export default function Sidebar() {
+   } = useMemo(() => {
+     void snoozeWakeTick;
      const preciseNow = new Date().toISOString();
-     // Subagent child threads live in the parent's Agents surface, not the
-     // sidebar roster (v2 models them as real threads with lineage).
 -    const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys);
 +    const visible = filterSidebarV2VisibleThreads(
 +      threads,
@@ -4940,7 +4919,7 @@ index 65c00d70e3..a7da51c5cc 100644
      inboxReturns.observe(workingShelfEnabled ? threads : null);
      const pinned: EnvironmentThreadShell[] = [];
      const active: EnvironmentThreadShell[] = [];
-@@ -2918,6 +3015,7 @@ export default function Sidebar() {
+@@ -2675,6 +2779,7 @@ export default function Sidebar() {
        snoozeNow: preciseNow,
      };
    }, [
@@ -4948,7 +4927,7 @@ index 65c00d70e3..a7da51c5cc 100644
      nowMinute,
      optimisticDrop,
      scopedProjectKeys,
-@@ -5399,6 +5497,14 @@ export default function Sidebar() {
+@@ -5006,6 +5111,14 @@ export default function Sidebar() {
                        };
                        const from = isContextDrag ? null : (dragState?.activeSection ?? null);
                        const items: ReactNode[] = [
@@ -4964,7 +4943,7 @@ index 65c00d70e3..a7da51c5cc 100644
                            key="draft-sessions"
                            projectByKey={projectByKey}
 diff --git a/apps/web/src/components/ThreadNotificationCoordinator.tsx b/apps/web/src/components/ThreadNotificationCoordinator.tsx
-index a74690ea8c..ac15d8aeef 100644
+index 1b013904e8..a70adf42c4 100644
 --- a/apps/web/src/components/ThreadNotificationCoordinator.tsx
 +++ b/apps/web/src/components/ThreadNotificationCoordinator.tsx
 @@ -5,7 +5,12 @@ import {
@@ -5021,7 +5000,7 @@ index a74690ea8c..ac15d8aeef 100644
    onNotification: (environmentId: EnvironmentId, notification: Notification) => void;
  }) {
    const shell = useAtomValue(environmentShell.stateValueAtom(environmentId));
-@@ -161,7 +175,7 @@ function EnvironmentNotifications({
+@@ -156,7 +170,7 @@ function EnvironmentNotifications({
            : completion !== null && (prior.completion === null || completion > prior.completion)
              ? "completion"
              : null;
@@ -5030,7 +5009,7 @@ index a74690ea8c..ac15d8aeef 100644
        const title =
          kind === "completion"
            ? "Thread completed"
-@@ -244,6 +258,7 @@ function EnvironmentNotifications({
+@@ -239,6 +253,7 @@ function EnvironmentNotifications({
      activeEnvironmentId,
      activeThreadId,
      environmentId,
@@ -5039,7 +5018,7 @@ index a74690ea8c..ac15d8aeef 100644
      mode,
      navigate,
 diff --git a/apps/web/src/components/chat/ChatHeader.tsx b/apps/web/src/components/chat/ChatHeader.tsx
-index c2b1a80501..2ff51c2905 100644
+index 831514a1ae..f75fbb30b1 100644
 --- a/apps/web/src/components/chat/ChatHeader.tsx
 +++ b/apps/web/src/components/chat/ChatHeader.tsx
 @@ -1,6 +1,7 @@
@@ -5050,7 +5029,7 @@ index c2b1a80501..2ff51c2905 100644
    type ThreadId,
  } from "@t3tools/contracts";
  import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-@@ -316,24 +317,34 @@ export const ChatHeader = memo(function ChatHeader({
+@@ -291,24 +292,34 @@ export const ChatHeader = memo(function ChatHeader({
          {activeProject ? (
            <>
              <WorkspaceBreadcrumbItem className="shrink">
@@ -5100,7 +5079,7 @@ index c2b1a80501..2ff51c2905 100644
              <WorkspaceBreadcrumbSeparator>
                <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
 diff --git a/apps/web/src/components/chat/DraftHeroHeadline.tsx b/apps/web/src/components/chat/DraftHeroHeadline.tsx
-index e9bd7c99e0..989f3f9156 100644
+index aa8e1757f3..03db43d775 100644
 --- a/apps/web/src/components/chat/DraftHeroHeadline.tsx
 +++ b/apps/web/src/components/chat/DraftHeroHeadline.tsx
 @@ -2,14 +2,14 @@ import type { DraftId } from "~/composerDraftStore";
@@ -5120,7 +5099,7 @@ index e9bd7c99e0..989f3f9156 100644
  import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
  import { useScratchProject } from "~/hooks/useScratchProject";
  import { useClientSettings } from "~/hooks/useSettings";
-@@ -78,6 +78,10 @@ export function DraftHeroHeadline({
+@@ -76,6 +76,10 @@ export function DraftHeroHeadline({
    const { scratchEnvironmentId, scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
    const openProjectDraft = useNewThreadHandler();
    const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -5131,13 +5110,7 @@ index e9bd7c99e0..989f3f9156 100644
  
    const environmentLabelById = useMemo(
      () =>
-@@ -154,14 +158,18 @@ export function DraftHeroHeadline({
-   const canChooseProject = projectPickerEntries.length > 0;
-   const shouldShowProjectMenu = canChooseProject;
-   // The project that hosts threads without a project is not a row: the line
--  // under the headline is the way into it.
-+  // under the headline is the way into it. Home's folder never appears.
-   const menuEntries = useMemo(
+@@ -152,9 +156,13 @@ export function DraftHeroHeadline({
      () =>
        projectPickerEntries.filter(
          ({ targetProject }) =>
@@ -5154,7 +5127,7 @@ index e9bd7c99e0..989f3f9156 100644
    const activeProject =
      activeProjectRef === null
 diff --git a/apps/web/src/components/chat/MessagesTimeline.tsx b/apps/web/src/components/chat/MessagesTimeline.tsx
-index 3ac4952e89..c192b34cd9 100644
+index e2a3b9dfd6..2c72f3b7f1 100644
 --- a/apps/web/src/components/chat/MessagesTimeline.tsx
 +++ b/apps/web/src/components/chat/MessagesTimeline.tsx
 @@ -23,6 +23,8 @@ import {
@@ -5166,7 +5139,7 @@ index 3ac4952e89..c192b34cd9 100644
    type MessageId,
    type OrchestrationV2TurnItem,
    type RunAttemptId,
-@@ -2457,6 +2459,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message"
+@@ -2389,6 +2391,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message"
              "Sent by automation"
            )}
          </p>
@@ -5180,7 +5153,7 @@ index 3ac4952e89..c192b34cd9 100644
        ) : userMessage.attribution === "t3code" ? (
          <p
            className="me-1 text-2xs text-muted-foreground/70"
-@@ -2472,7 +2481,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message"
+@@ -2404,7 +2413,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message"
                tone="muted"
                aria-label="Open sending thread"
              >
@@ -6026,18 +5999,11 @@ index 0000000000..76c210d13d
 +  );
 +}
 diff --git a/apps/web/src/components/settings/SettingsScopeSentence.tsx b/apps/web/src/components/settings/SettingsScopeSentence.tsx
-index 04312fd031..4cb9da77ac 100644
+index 85826d0d8d..6b566c4cc0 100644
 --- a/apps/web/src/components/settings/SettingsScopeSentence.tsx
 +++ b/apps/web/src/components/settings/SettingsScopeSentence.tsx
-@@ -29,9 +29,13 @@ import {
-   settingsScopeEnvironmentLabel,
- } from "./settingsScopeAxis";
+@@ -43,6 +43,7 @@ import {
  
--/** Pages whose every row is saved on this client; they have no scope to pick. */
-+/**
-+ * Pages whose every row is saved on this client or this desktop's own server;
-+ * they have no scope to pick.
-+ */
  export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
    "/settings/appearance",
 +  "/settings/home",
@@ -6045,7 +6011,7 @@ index 04312fd031..4cb9da77ac 100644
    "/settings/connections",
  ]);
 diff --git a/apps/web/src/components/settings/SettingsSidebarNav.tsx b/apps/web/src/components/settings/SettingsSidebarNav.tsx
-index 035e42b53c..37d7594c5b 100644
+index ea09fae08b..f2ab8b9da3 100644
 --- a/apps/web/src/components/settings/SettingsSidebarNav.tsx
 +++ b/apps/web/src/components/settings/SettingsSidebarNav.tsx
 @@ -17,6 +17,7 @@ import {
@@ -6093,7 +6059,7 @@ index 035e42b53c..37d7594c5b 100644
    const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
    const searchInputRef = useRef<HTMLInputElement>(null);
 diff --git a/apps/web/src/components/settings/settingsSearch.ts b/apps/web/src/components/settings/settingsSearch.ts
-index 5747fc59d9..062d8bcaa7 100644
+index 53032977f5..2a70cca57b 100644
 --- a/apps/web/src/components/settings/settingsSearch.ts
 +++ b/apps/web/src/components/settings/settingsSearch.ts
 @@ -17,6 +17,7 @@ export type SettingsPath =
@@ -6104,7 +6070,7 @@ index 5747fc59d9..062d8bcaa7 100644
    | "/settings/appearance"
    | "/settings/keybindings"
    | "/settings/snap-shot"
-@@ -96,6 +97,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
+@@ -75,6 +76,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
    "/settings/diagnostics": "Diagnostics",
    "/settings/projects": "Project",
    "/settings/general": "General",
@@ -6112,7 +6078,7 @@ index 5747fc59d9..062d8bcaa7 100644
    "/settings/appearance": "Appearance",
    "/settings/keybindings": "Keybindings",
    "/settings/snap-shot": "SnapShots",
-@@ -613,6 +615,14 @@ export const SETTINGS_SEARCH_ITEMS = [
+@@ -574,6 +576,14 @@ export const SETTINGS_SEARCH_ITEMS = [
      to: "/settings/general",
      searchTerms: ["project thread tree old flat list"],
    },
@@ -6127,19 +6093,19 @@ index 5747fc59d9..062d8bcaa7 100644
    {
      id: "keybindings",
      title: "Keybindings",
-@@ -1024,6 +1034,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
+@@ -985,6 +995,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
    "/settings/diagnostics": "environment",
    "/settings/projects": "project",
    "/settings/general": null,
 +  "/settings/home": null,
    "/settings/appearance": null,
    "/settings/snap-shot": null,
-   // Keybindings fan out to the selection; Providers shows the representative
+   "/settings/keybindings": null,
 diff --git a/apps/web/src/hooks/useHandleNewThread.test.ts b/apps/web/src/hooks/useHandleNewThread.test.ts
-index 20198ac8f6..0eebc0ee4b 100644
+index 50b27ca797..ee7cf8392f 100644
 --- a/apps/web/src/hooks/useHandleNewThread.test.ts
 +++ b/apps/web/src/hooks/useHandleNewThread.test.ts
-@@ -186,6 +186,7 @@ vi.mock("../state/entities", () => {
+@@ -182,6 +182,7 @@ vi.mock("../state/entities", () => {
  });
  vi.mock("../state/server", () => ({
    environmentServerConfigsAtom: {},
@@ -6148,7 +6114,7 @@ index 20198ac8f6..0eebc0ee4b 100644
  }));
  vi.mock("../threadRoutes", () => ({ resolveThreadRouteTarget: () => null }));
 diff --git a/apps/web/src/hooks/useHandleNewThread.ts b/apps/web/src/hooks/useHandleNewThread.ts
-index 9e9f4a7f39..99da371e4a 100644
+index 5a0fd1305f..02d99f1d3a 100644
 --- a/apps/web/src/hooks/useHandleNewThread.ts
 +++ b/apps/web/src/hooks/useHandleNewThread.ts
 @@ -1,9 +1,5 @@
@@ -6172,7 +6138,7 @@ index 9e9f4a7f39..99da371e4a 100644
  import { resolveThreadRouteTarget } from "../threadRoutes";
  import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
  import { useClientSettings } from "./useSettings";
-@@ -484,13 +481,22 @@ export function useHandleNewThread() {
+@@ -420,13 +417,22 @@ export function useHandleNewThread() {
      });
    }, [projectOrder, projects]);
    const handleNewThread = useNewThreadHandler();
@@ -6257,7 +6223,7 @@ index c145404a74..4d3cd2241b 100644
      const projectRef = resolveThreadActionProjectRef(
        createContext({
 diff --git a/apps/web/src/lib/chatThreadActions.ts b/apps/web/src/lib/chatThreadActions.ts
-index c14a26d03d..28fa7a8114 100644
+index ac5412c239..5b10b67cbb 100644
 --- a/apps/web/src/lib/chatThreadActions.ts
 +++ b/apps/web/src/lib/chatThreadActions.ts
 @@ -1,9 +1,11 @@
@@ -6288,7 +6254,7 @@ index c14a26d03d..28fa7a8114 100644
    environmentId: EnvironmentId;
    projectId: ProjectId;
  }
-@@ -68,9 +74,45 @@ export function hasExplicitComposerModelSelection(
+@@ -67,9 +73,45 @@ export function hasExplicitComposerModelSelection(
    );
  }
  
@@ -6335,10 +6301,10 @@ index c14a26d03d..28fa7a8114 100644
      return scopeProjectRef(context.activeThread.environmentId, context.activeThread.projectId);
    }
 diff --git a/apps/web/src/routeTree.gen.ts b/apps/web/src/routeTree.gen.ts
-index 7c0b13ef76..6fd1c8ce7d 100644
+index 0e5929c1b9..892c3e666f 100644
 --- a/apps/web/src/routeTree.gen.ts
 +++ b/apps/web/src/routeTree.gen.ts
-@@ -26,6 +26,7 @@ import { Route as SettingsProjectsRouteImport } from './routes/settings.projects
+@@ -22,6 +22,7 @@ import { Route as SettingsProjectsRouteImport } from './routes/settings.projects
  import { Route as SettingsOpenSourceLicensesRouteImport } from './routes/settings.open-source-licenses'
  import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
  import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
@@ -6346,7 +6312,7 @@ index 7c0b13ef76..6fd1c8ce7d 100644
  import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
  import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
  import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
-@@ -122,6 +123,11 @@ const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+@@ -118,6 +119,11 @@ const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
    path: '/integrations',
    getParentRoute: () => SettingsRoute,
  } as any)
@@ -6358,7 +6324,7 @@ index 7c0b13ef76..6fd1c8ce7d 100644
  const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
    id: '/general',
    path: '/general',
-@@ -190,6 +196,7 @@ export interface FileRoutesByFullPath {
+@@ -186,6 +192,7 @@ export interface FileRoutesByFullPath {
    '/settings/connections': typeof SettingsConnectionsRoute
    '/settings/diagnostics': typeof SettingsDiagnosticsRoute
    '/settings/general': typeof SettingsGeneralRoute
@@ -6366,7 +6332,7 @@ index 7c0b13ef76..6fd1c8ce7d 100644
    '/settings/integrations': typeof SettingsIntegrationsRoute
    '/settings/keybindings': typeof SettingsKeybindingsRoute
    '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
-@@ -217,6 +224,7 @@ export interface FileRoutesByTo {
+@@ -213,6 +220,7 @@ export interface FileRoutesByTo {
    '/settings/connections': typeof SettingsConnectionsRoute
    '/settings/diagnostics': typeof SettingsDiagnosticsRoute
    '/settings/general': typeof SettingsGeneralRoute
@@ -6374,7 +6340,7 @@ index 7c0b13ef76..6fd1c8ce7d 100644
    '/settings/integrations': typeof SettingsIntegrationsRoute
    '/settings/keybindings': typeof SettingsKeybindingsRoute
    '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
-@@ -247,6 +255,7 @@ export interface FileRoutesById {
+@@ -243,6 +251,7 @@ export interface FileRoutesById {
    '/settings/connections': typeof SettingsConnectionsRoute
    '/settings/diagnostics': typeof SettingsDiagnosticsRoute
    '/settings/general': typeof SettingsGeneralRoute
@@ -6382,7 +6348,7 @@ index 7c0b13ef76..6fd1c8ce7d 100644
    '/settings/integrations': typeof SettingsIntegrationsRoute
    '/settings/keybindings': typeof SettingsKeybindingsRoute
    '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
-@@ -278,6 +287,7 @@ export interface FileRouteTypes {
+@@ -274,6 +283,7 @@ export interface FileRouteTypes {
      | '/settings/connections'
      | '/settings/diagnostics'
      | '/settings/general'
@@ -6390,7 +6356,7 @@ index 7c0b13ef76..6fd1c8ce7d 100644
      | '/settings/integrations'
      | '/settings/keybindings'
      | '/settings/open-source-licenses'
-@@ -305,6 +315,7 @@ export interface FileRouteTypes {
+@@ -301,6 +311,7 @@ export interface FileRouteTypes {
      | '/settings/connections'
      | '/settings/diagnostics'
      | '/settings/general'
@@ -6398,7 +6364,7 @@ index 7c0b13ef76..6fd1c8ce7d 100644
      | '/settings/integrations'
      | '/settings/keybindings'
      | '/settings/open-source-licenses'
-@@ -334,6 +345,7 @@ export interface FileRouteTypes {
+@@ -330,6 +341,7 @@ export interface FileRouteTypes {
      | '/settings/connections'
      | '/settings/diagnostics'
      | '/settings/general'
@@ -6406,7 +6372,7 @@ index 7c0b13ef76..6fd1c8ce7d 100644
      | '/settings/integrations'
      | '/settings/keybindings'
      | '/settings/open-source-licenses'
-@@ -480,6 +492,13 @@ declare module '@tanstack/react-router' {
+@@ -476,6 +488,13 @@ declare module '@tanstack/react-router' {
        preLoaderRoute: typeof SettingsIntegrationsRouteImport
        parentRoute: typeof SettingsRoute
      }
@@ -6420,7 +6386,7 @@ index 7c0b13ef76..6fd1c8ce7d 100644
      '/settings/general': {
        id: '/settings/general'
        path: '/general'
-@@ -577,6 +596,7 @@ interface SettingsRouteChildren {
+@@ -573,6 +592,7 @@ interface SettingsRouteChildren {
    SettingsConnectionsRoute: typeof SettingsConnectionsRoute
    SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
    SettingsGeneralRoute: typeof SettingsGeneralRoute
@@ -6428,7 +6394,7 @@ index 7c0b13ef76..6fd1c8ce7d 100644
    SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
    SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
    SettingsOpenSourceLicensesRoute: typeof SettingsOpenSourceLicensesRoute
-@@ -594,6 +614,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
+@@ -590,6 +610,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
    SettingsConnectionsRoute: SettingsConnectionsRoute,
    SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
    SettingsGeneralRoute: SettingsGeneralRoute,
@@ -6658,10 +6624,10 @@ index 0000000000..6c84794e98
 +
 +Turning Home off stops it from acting. Its thread stays in your history.
 diff --git a/packages/client-runtime/package.json b/packages/client-runtime/package.json
-index 703d418ac9..19d8b9b65e 100644
+index 80462970d5..de75e15b6c 100644
 --- a/packages/client-runtime/package.json
 +++ b/packages/client-runtime/package.json
-@@ -191,6 +191,10 @@
+@@ -195,6 +195,10 @@
        "types": "./src/state/deviceHubAccess.ts",
        "default": "./src/state/deviceHubAccess.ts"
      },
@@ -6673,10 +6639,10 @@ index 703d418ac9..19d8b9b65e 100644
        "types": "./src/state/preview.ts",
        "default": "./src/state/preview.ts"
 diff --git a/packages/client-runtime/src/rpc/client.ts b/packages/client-runtime/src/rpc/client.ts
-index c11a49897b..c0204f78a2 100644
+index 5b670fd622..80435f613d 100644
 --- a/packages/client-runtime/src/rpc/client.ts
 +++ b/packages/client-runtime/src/rpc/client.ts
-@@ -66,6 +66,7 @@ export type EnvironmentSubscriptionRpcTag =
+@@ -68,6 +68,7 @@ export type EnvironmentSubscriptionRpcTag =
    | typeof WS_METHODS.subscribeDeviceState
    | typeof WS_METHODS.subscribeResourceTelemetry
    | typeof WS_METHODS.pullRequestsSubscribeRefreshes
@@ -6762,10 +6728,10 @@ index 0000000000..de39d11f90
 +  };
 +}
 diff --git a/packages/client-runtime/src/state/projects.ts b/packages/client-runtime/src/state/projects.ts
-index 36b1f033ac..92e4d7b1d1 100644
+index 6268519ea5..da8c34d190 100644
 --- a/packages/client-runtime/src/state/projects.ts
 +++ b/packages/client-runtime/src/state/projects.ts
-@@ -145,6 +145,14 @@ export function isScratchProject(
+@@ -144,6 +144,14 @@ export function isScratchProject(
    );
  }
  
@@ -7181,11 +7147,11 @@ index 600d503ade..14e0544f1e 100644
  export * from "./threadPullRequest.ts";
  export * from "./threadSearch.ts";
 diff --git a/packages/contracts/src/ipc.ts b/packages/contracts/src/ipc.ts
-index bea353c2be..d2ffab55f8 100644
+index dcce2af0b0..e19fde2f00 100644
 --- a/packages/contracts/src/ipc.ts
 +++ b/packages/contracts/src/ipc.ts
-@@ -1129,6 +1129,8 @@ export interface DesktopBridge {
-   /** The desktop client's OS platform, read from Electron's preload process. */
+@@ -1030,6 +1030,8 @@ export interface DesktopBridge {
+   getPathForFile?: (file: File) => string;
    getClientPlatform?: () => string;
    setNotificationBadge?: (badge: { count: number; image: string | null }) => Promise<void>;
 +  /** While Home is on, macOS hides the window on close instead of destroying the renderer. */
@@ -7194,7 +7160,7 @@ index bea353c2be..d2ffab55f8 100644
    onTrackpadScrollEnd?: (listener: () => void) => () => void;
    /**
 diff --git a/packages/contracts/src/keybindings.ts b/packages/contracts/src/keybindings.ts
-index 04c3acab80..0bfe135259 100644
+index 4f966ba909..e49a339c83 100644
 --- a/packages/contracts/src/keybindings.ts
 +++ b/packages/contracts/src/keybindings.ts
 @@ -83,6 +83,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
@@ -7206,10 +7172,10 @@ index 04c3acab80..0bfe135259 100644
    "appearance.cycle",
    "themeEditor.toggle",
 diff --git a/packages/contracts/src/orchestrationV2.ts b/packages/contracts/src/orchestrationV2.ts
-index e4179a201b..a1d12f4e6f 100644
+index fa4b7738ea..6006e4c479 100644
 --- a/packages/contracts/src/orchestrationV2.ts
 +++ b/packages/contracts/src/orchestrationV2.ts
-@@ -3050,6 +3050,12 @@ export const OrchestrationV2Command = Schema.Union([
+@@ -2846,6 +2846,12 @@ export const OrchestrationV2Command = Schema.Union([
      commandId: CommandId,
      threadId: ThreadId,
    }),
@@ -7223,7 +7189,7 @@ index e4179a201b..a1d12f4e6f 100644
      type: Schema.Literal("queued-run.reorder"),
      commandId: CommandId,
 diff --git a/packages/contracts/src/orchestratorMcp.ts b/packages/contracts/src/orchestratorMcp.ts
-index 80328d2797..710d38630e 100644
+index 382cea55bb..853f7f4e9e 100644
 --- a/packages/contracts/src/orchestratorMcp.ts
 +++ b/packages/contracts/src/orchestratorMcp.ts
 @@ -4,6 +4,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
@@ -7243,7 +7209,7 @@ index 80328d2797..710d38630e 100644
    Schema.isMaxLength(256),
  ).annotate({ description: "Stable idempotency key to reuse when retrying this mutation." });
  
-@@ -303,8 +304,25 @@ const OrchestratorMcpProjectTarget = Schema.optional(
+@@ -290,8 +291,25 @@ const OrchestratorMcpProjectTarget = Schema.optional(
    }),
  );
  
@@ -7270,7 +7236,7 @@ index 80328d2797..710d38630e 100644
    statuses: Schema.optional(
      Schema.Array(OrchestratorMcpThreadStatus).check(Schema.isMaxLength(10)),
    ),
-@@ -319,6 +337,7 @@ export type OrchestratorMcpThreadListInput = typeof OrchestratorMcpThreadListInp
+@@ -306,6 +324,7 @@ export type OrchestratorMcpThreadListInput = typeof OrchestratorMcpThreadListInp
  
  export const OrchestratorMcpThreadListItem = Schema.Struct({
    threadId: ThreadId,
@@ -7278,19 +7244,17 @@ index 80328d2797..710d38630e 100644
    title: Schema.String,
    createdBy: OrchestrationV2Actor,
    creationSource: OrchestrationV2CreationSource,
-@@ -343,8 +362,9 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
+@@ -329,7 +348,8 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
  export type OrchestratorMcpThreadListItem = typeof OrchestratorMcpThreadListItem.Type;
  
  export const OrchestratorMcpThreadListResult = Schema.Struct({
 -  projectId: ProjectId,
--  /** The calling thread, or null when the caller is not a T3 thread. */
-+  /** The listed project; null when Home lists every project. */
++  /** Null when Home lists every project. */
 +  projectId: Schema.NullOr(ProjectId),
-+  /** The calling thread, or null when the caller is not a T3 thread or the list comes from another environment. */
    currentThreadId: Schema.NullOr(ThreadId),
    threads: Schema.Array(OrchestratorMcpThreadListItem),
    nextCursor: Schema.NullOr(NonNegativeInt),
-@@ -353,6 +373,7 @@ export const OrchestratorMcpThreadListResult = Schema.Struct({
+@@ -338,6 +358,7 @@ export const OrchestratorMcpThreadListResult = Schema.Struct({
  export type OrchestratorMcpThreadListResult = typeof OrchestratorMcpThreadListResult.Type;
  
  export const OrchestratorMcpThreadReadInput = Schema.Struct({
@@ -7298,7 +7262,7 @@ index 80328d2797..710d38630e 100644
    threadId: ThreadId,
    itemId: Schema.optional(TurnItemId),
    textOffset: Schema.optional(NonNegativeInt),
-@@ -439,6 +460,7 @@ export const OrchestratorMcpThreadReadResult = Schema.Struct({
+@@ -423,6 +444,7 @@ export const OrchestratorMcpThreadReadResult = Schema.Struct({
  export type OrchestratorMcpThreadReadResult = typeof OrchestratorMcpThreadReadResult.Type;
  
  export const OrchestratorMcpThreadSendInput = Schema.Struct({
@@ -7306,7 +7270,7 @@ index 80328d2797..710d38630e 100644
    threadId: ThreadId,
    message: OrchestratorMcpPrompt,
    mode: Schema.optional(Schema.Literals(["auto", "queue", "steer", "restart"])),
-@@ -473,6 +495,7 @@ export const OrchestratorMcpThreadWaitResult = Schema.Struct({
+@@ -456,6 +478,7 @@ export const OrchestratorMcpThreadWaitResult = Schema.Struct({
  export type OrchestratorMcpThreadWaitResult = typeof OrchestratorMcpThreadWaitResult.Type;
  
  export const OrchestratorMcpThreadInterruptInput = Schema.Struct({
@@ -7314,7 +7278,7 @@ index 80328d2797..710d38630e 100644
    threadId: ThreadId,
    runId: Schema.optional(RunId),
    reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2_000))),
-@@ -682,6 +705,7 @@ export class OrchestratorMcpFailure extends Schema.TaggedError<OrchestratorMcpFa
+@@ -654,6 +677,7 @@ export class OrchestratorMcpFailure extends Schema.TaggedError<OrchestratorMcpFa
        "orchestration_error",
        "thread_credential_required",
        "target_required",
@@ -7323,10 +7287,10 @@ index 80328d2797..710d38630e 100644
      message: Schema.String,
    },
 diff --git a/packages/contracts/src/rpc.ts b/packages/contracts/src/rpc.ts
-index 61304c52f8..b84519cf40 100644
+index 9536aa93a7..1f9c1b8aff 100644
 --- a/packages/contracts/src/rpc.ts
 +++ b/packages/contracts/src/rpc.ts
-@@ -286,6 +286,17 @@ import {
+@@ -287,6 +287,17 @@ import {
    DeviceShutdownInput,
  } from "./device.ts";
  import {} from "./previewAutomation.ts";
@@ -7344,11 +7308,10 @@ index 61304c52f8..b84519cf40 100644
  import {
    ServerConfigStreamEvent,
    DesktopUpdateCommitInput,
-@@ -461,6 +472,15 @@ export const WS_METHODS = {
+@@ -453,6 +464,14 @@ export const WS_METHODS = {
    previewReportProfiles: "preview.reportProfiles",
    previewReportStatus: "preview.reportStatus",
  
-+  // Home and fleet methods
 +  homeEnable: "home.enable",
 +  homeDisable: "home.disable",
 +  homeStartFresh: "home.startFresh",
@@ -7357,10 +7320,10 @@ index 61304c52f8..b84519cf40 100644
 +  fleetRespond: "fleet.respond",
 +  fleetReportWatchEvents: "fleet.reportWatchEvents",
 +
-   // Device methods
    deviceConfigure: "device.configure",
    deviceList: "device.list",
-@@ -1548,6 +1568,47 @@ const WsPreviewReportStatusRpc = Rpc.make(WS_METHODS.previewReportStatus, {
+   deviceTestHost: "device.testHost",
+@@ -1521,6 +1540,47 @@ const WsPreviewReportStatusRpc = Rpc.make(WS_METHODS.previewReportStatus, {
    error: Schema.Union([PreviewError, EnvironmentAuthorizationError]),
  });
  
@@ -7408,7 +7371,7 @@ index 61304c52f8..b84519cf40 100644
  const WsSubscribePreviewEventsRpc = Rpc.make(WS_METHODS.subscribePreviewEvents, {
    payload: Schema.Struct({}),
    success: PreviewEvent,
-@@ -2038,6 +2099,13 @@ export const WsRpcGroup = RpcGroup.make(
+@@ -2013,6 +2073,13 @@ export const WsRpcGroup = RpcGroup.make(
    WsPreviewClearProfileRpc,
    WsPreviewReportProfilesRpc,
    WsPreviewReportStatusRpc,
@@ -7423,23 +7386,20 @@ index 61304c52f8..b84519cf40 100644
    WsSubscribeDiscoveredLocalServersRpc,
    WsDeviceConfigureRpc,
 diff --git a/packages/contracts/src/server.ts b/packages/contracts/src/server.ts
-index 985e6bbc12..ccb707393c 100644
+index 62258a03b6..95ef78201b 100644
 --- a/packages/contracts/src/server.ts
 +++ b/packages/contracts/src/server.ts
-@@ -723,6 +723,11 @@ export const ServerConfig = Schema.Struct({
-    * and whose data dir is outside a Git checkout.
-    */
+@@ -611,6 +611,8 @@ export const ServerConfig = Schema.Struct({
+   threadFind: Schema.optionalKey(Schema.Boolean),
+   threadFindProgressive: Schema.optionalKey(Schema.Boolean),
    scratchWorkspaceRoot: Schema.optionalKey(TrimmedNonEmptyString),
-+  /**
-+   * Folder behind Home, the fleet-wide agent thread. Present only on servers a
-+   * desktop app hosts, which are the only ones that can run Home.
-+   */
++  /** Present only on desktop-hosted servers, the only ones that can run Home. */
 +  homeWorkspaceRoot: Schema.optionalKey(TrimmedNonEmptyString),
+   newProjectsRoot: Schema.optionalKey(TrimmedNonEmptyString),
    /**
-    * Folder that holds projects started from just a name. Present only on
-    * servers that answer projects.createNew.
+    * Never sent in a config snapshot: the theme stream emits the current set
 diff --git a/packages/contracts/src/settings.ts b/packages/contracts/src/settings.ts
-index 569fcf40cf..12b0741f7b 100644
+index 60d2aceed7..19f56f538f 100644
 --- a/packages/contracts/src/settings.ts
 +++ b/packages/contracts/src/settings.ts
 @@ -8,6 +8,7 @@ import {
@@ -7450,7 +7410,7 @@ index 569fcf40cf..12b0741f7b 100644
  import * as SchemaTransformation from "effect/SchemaTransformation";
  import {
    ForwardCompatibleNullable,
-@@ -1256,6 +1257,11 @@ export const ServerSettings = Schema.Struct({
+@@ -1135,6 +1136,11 @@ export const ServerSettings = Schema.Struct({
    environmentIcon: ForwardCompatibleNullable(EnvironmentMachineKind).pipe(
      Schema.withDecodingDefault(Effect.succeed(null)),
    ),
@@ -7460,9 +7420,9 @@ index 569fcf40cf..12b0741f7b 100644
 +   */
 +  home: HomeSettings.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_HOME_SETTINGS))),
    /**
-    * Null means inherit: the repository's t3.json, then "local". The old
-    * default "local" was never persisted (defaults are stripped on write), so
-@@ -1610,6 +1616,8 @@ export const ServerSettingsPatch = Schema.Struct({
+    * Null means inherit: the repository's t3.json, then "local". Null stays off the wire
+    * so older clients, which require a literal here, keep decoding.
+@@ -1423,6 +1429,8 @@ export const ServerSettingsPatch = Schema.Struct({
    providerHealthRefreshInterval: Schema.optionalKey(Schema.DurationFromMillis),
    backgroundActivityProfile: Schema.optionalKey(BackgroundActivityProfile),
    environmentIcon: Schema.optionalKey(Schema.NullOr(EnvironmentMachineKind)),
