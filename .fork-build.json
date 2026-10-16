@@ -1,0 +1,29 @@
+{
+  "upstream_tag": "v0.1.1-nightly.20261016.3203",
+  "upstream_commit": "e3b35d1b2440b104f0bc2e357377c348121234dd",
+  "control_commit": "0a8d83c64286ac379fa1c7ed95b1edfc8a756c08",
+  "version": "0.1.1-nightly.20261016.100045",
+  "patches": [
+    {
+      "patch": "explicit-update-feed.patch",
+      "status": "applied"
+    },
+    {
+      "patch": "right-panel-maximize-any-width.patch",
+      "status": "applied"
+    },
+    {
+      "patch": "home-agent.patch",
+      "status": "applied"
+    },
+    {
+      "patch": "inbox-order.patch",
+      "status": "applied"
+    },
+    {
+      "patch": "thread-links-any-environment.patch",
+      "status": "applied"
+    }
+  ],
+  "workflow_source_commit": "bffa9730142c10b8ff3e9a8b2d1c3e2ed685efe0"
+}
