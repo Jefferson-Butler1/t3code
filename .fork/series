@@ -3,3 +3,4 @@ right-panel-maximize-any-width.patch
 home-agent.patch
 inbox-order.patch
 thread-links-any-environment.patch
+agent-self-snooze.patch
