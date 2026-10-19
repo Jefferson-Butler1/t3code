@@ -1,4 +1,4 @@
-From 1e64d7fa61bda066dcc92f5e493c283dfa756bd8 Mon Sep 17 00:00:00 2001
+From 976a1cb2ed700a5bd3e2425a089d5b3e6bfe8d42 Mon Sep 17 00:00:00 2001
 From: Jefferson-Butler1 <jefferson.butler@icloud.com>
 Date: Thu, 15 Oct 2026 11:58:36 -0700
 Subject: [PATCH] feat(web,mobile): order the inbox oldest first
@@ -11,34 +11,34 @@ top, so threads waiting longest sank to the bottom. An Inbox order setting
 (web Settings → General, mobile Settings → Threads → Beta) can now list
 them oldest first, working the inbox as a queue.
 ---
- apps/mobile/src/features/home/HomeScreen.tsx  |  3 +
- .../settings/SettingsThreadsRouteScreen.tsx   | 18 +++++-
- .../threads/ThreadArrangementSheet.tsx        |  6 +-
+ apps/mobile/src/features/home/HomeScreen.tsx  |  2 +
+ .../settings/SettingsThreadsRouteScreen.tsx   | 18 +++++--
+ .../threads/ThreadArrangementSheet.tsx        |  6 +--
  .../src/features/threads/threadListV2.ts      |  5 +-
- .../use-thread-list-v2-shelf-preferences.ts   |  3 +
+ .../use-thread-list-v2-shelf-preferences.ts   |  3 ++
  .../src/persistence/mobile-preferences.ts     |  7 +++
  apps/web/src/components/Sidebar.logic.test.ts | 34 ++++++------
- apps/web/src/components/Sidebar.tsx           |  7 ++-
- .../components/settings/SettingsPanels.tsx    | 55 ++++++++++++++++++-
- .../src/components/settings/settingsSearch.ts |  6 ++
- .../src/state/threadInbox.test.ts             | 30 +++++++++-
+ apps/web/src/components/Sidebar.tsx           | 16 ++++--
+ .../components/settings/SettingsPanels.tsx    | 54 ++++++++++++++++++-
+ .../src/components/settings/settingsSearch.ts |  6 +++
+ .../src/state/threadInbox.test.ts             | 30 ++++++++++-
  .../client-runtime/src/state/threadInbox.ts   |  7 ++-
- packages/contracts/src/settings.ts            |  9 +++
- 13 files changed, 161 insertions(+), 29 deletions(-)
+ packages/contracts/src/settings.ts            |  9 ++++
+ 13 files changed, 167 insertions(+), 30 deletions(-)
 
 diff --git a/apps/mobile/src/features/home/HomeScreen.tsx b/apps/mobile/src/features/home/HomeScreen.tsx
-index e2af1860d7..a01dcfee5b 100644
+index e90fc1672b..317ac09f74 100644
 --- a/apps/mobile/src/features/home/HomeScreen.tsx
 +++ b/apps/mobile/src/features/home/HomeScreen.tsx
-@@ -484,6 +484,7 @@ export function HomeScreen(props: HomeScreenProps) {
-   );
+@@ -438,6 +438,7 @@ export function HomeScreen(props: HomeScreenProps) {
+     setSettledVisibleCount((count) => count + THREAD_LIST_V2_SETTLED_PAGE_COUNT);
    const {
      loaded: shelfPreferencesLoaded,
 +    inboxSortOrder,
      settledShelfExpanded,
      snoozedShelfExpanded,
      workingShelfEnabled,
-@@ -569,11 +570,13 @@ export function HomeScreen(props: HomeScreenProps) {
+@@ -514,6 +515,7 @@ export function HomeScreen(props: HomeScreenProps) {
        workingShelfEnabled,
        workingShelfExpanded,
        inboxReturnAt: threadListInboxReturns.returnedAt,
@@ -46,12 +46,6 @@ index e2af1860d7..a01dcfee5b 100644
        snoozedShelfExpanded,
        settledShelfExpanded,
        selectedThreadKey,
-     });
-   }, [
-+    inboxSortOrder,
-     workingShelfEnabled,
-     workingShelfExpanded,
-     pendingOrder,
 diff --git a/apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx b/apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
 index dea74b2cd5..da58fb28ed 100644
 --- a/apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
@@ -91,10 +85,10 @@ index dea74b2cd5..da58fb28ed 100644
      </View>
    );
 diff --git a/apps/mobile/src/features/threads/ThreadArrangementSheet.tsx b/apps/mobile/src/features/threads/ThreadArrangementSheet.tsx
-index e26cc2eef8..8ee0118d30 100644
+index 335749e7fa..fa40aaed24 100644
 --- a/apps/mobile/src/features/threads/ThreadArrangementSheet.tsx
 +++ b/apps/mobile/src/features/threads/ThreadArrangementSheet.tsx
-@@ -155,7 +155,7 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
+@@ -156,7 +156,7 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
    const pendingOrder = useAtomValue(pendingThreadOrderAtom);
    const dropBusy = useAtomValue(threadDropBusyAtom);
    const { moveThread } = useThreadListActions();
@@ -103,7 +97,7 @@ index e26cc2eef8..8ee0118d30 100644
    const [now, setNow] = useState(() => new Date().toISOString());
    const [expanded, setExpanded] = useState({ snoozed: false, settled: false });
    useEffect(() => {
-@@ -198,12 +198,12 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
+@@ -199,12 +199,12 @@ export function ThreadArrangementSheet(props: { onClose: () => void }) {
      return {
        pinned,
        active: workingShelfEnabled
@@ -149,10 +143,10 @@ index 630ebb70e3..3a5fc6045e 100644
    const orderedWorking = sortWorkingThreadsBySend(working);
    const orderedSnoozed = [...snoozed].sort(
 diff --git a/apps/mobile/src/features/threads/use-thread-list-v2-shelf-preferences.ts b/apps/mobile/src/features/threads/use-thread-list-v2-shelf-preferences.ts
-index d8209074bc..d28e4a90ea 100644
+index e0ca1ea3c4..bd7c14578e 100644
 --- a/apps/mobile/src/features/threads/use-thread-list-v2-shelf-preferences.ts
 +++ b/apps/mobile/src/features/threads/use-thread-list-v2-shelf-preferences.ts
-@@ -17,6 +17,8 @@ export function useThreadListV2ShelfPreferences() {
+@@ -12,6 +12,8 @@ export function useThreadListV2ShelfPreferences() {
    const settledShelfExpanded =
      loaded && preferencesResult.value.threadListSettledShelfExpanded === true;
    const workingShelfEnabled = loaded && preferencesResult.value.workingShelfEnabled === true;
@@ -160,8 +154,8 @@ index d8209074bc..d28e4a90ea 100644
 +    (loaded ? preferencesResult.value.inboxSortOrder : undefined) ?? "newest_first";
    const workingShelfExpanded =
      loaded && preferencesResult.value.threadListWorkingShelfExpanded === true;
-   const snoozedShelfExpandedRef = useRef(snoozedShelfExpanded);
-@@ -47,6 +49,7 @@ export function useThreadListV2ShelfPreferences() {
+ 
+@@ -44,6 +46,7 @@ export function useThreadListV2ShelfPreferences() {
  
    return {
      loaded,
@@ -209,10 +203,10 @@ index 4ec0f9ea8c..807b4ae018 100644
      preferences.modelFavorites = parsed.modelFavorites.filter(
        (favorite) =>
 diff --git a/apps/web/src/components/Sidebar.logic.test.ts b/apps/web/src/components/Sidebar.logic.test.ts
-index 454dc07ac2..bc3afe3079 100644
+index 910c2cb023..c0bbc5b299 100644
 --- a/apps/web/src/components/Sidebar.logic.test.ts
 +++ b/apps/web/src/components/Sidebar.logic.test.ts
-@@ -2197,17 +2197,20 @@ describe("Working shelf (beta)", () => {
+@@ -2268,17 +2268,20 @@ describe("Working shelf (beta)", () => {
      });
  
      it("puts the thread that finished last on top, whatever its age", () => {
@@ -244,7 +238,7 @@ index 454dc07ac2..bc3afe3079 100644
        expect(sorted.map((entry) => entry.id)).toEqual(["old-finished-now", "reopened", "new"]);
      });
  
-@@ -2220,12 +2223,11 @@ describe("Working shelf (beta)", () => {
+@@ -2291,12 +2294,11 @@ describe("Working shelf (beta)", () => {
          createdAt: "2026-03-09T09:30:00.000Z",
          completedAt: "2026-03-09T11:00:00.000Z",
        });
@@ -262,48 +256,105 @@ index 454dc07ac2..bc3afe3079 100644
          ).map((entry) => entry.id),
        ).toEqual(["asks-approval", "finished"]);
 diff --git a/apps/web/src/components/Sidebar.tsx b/apps/web/src/components/Sidebar.tsx
-index a64f8e9605..b6b6623b73 100644
+index 8f94652d60..97405d8155 100644
 --- a/apps/web/src/components/Sidebar.tsx
 +++ b/apps/web/src/components/Sidebar.tsx
-@@ -2321,6 +2321,7 @@ export default function Sidebar() {
-   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
-   const timestampFormat = useClientSettings((s) => s.timestampFormat);
+@@ -66,7 +66,7 @@ import {
+   type ThreadId,
+ } from "@t3tools/contracts";
+ 
+-import type { TimestampFormat } from "@t3tools/contracts/settings";
++import type { InboxSortOrder, TimestampFormat } from "@t3tools/contracts/settings";
+ import {
+   AlarmClockIcon,
+   AlarmClockOffIcon,
+@@ -396,6 +396,7 @@ interface SidebarThreadPartitionInput {
+   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
+   readonly optimisticDrop: SidebarOptimisticDrop | null;
+   readonly workingShelfEnabled: boolean;
++  readonly inboxSortOrder: InboxSortOrder;
+   readonly homeThreadRef: ScopedThreadRef | null;
+   // Snooze wakes and the queued-turn grace depend on the clock, so the minute
+   // tick and the precise snooze-wake tick are inputs: a new key repartitions.
+@@ -420,8 +421,10 @@ function resolveDraggedOrders(input: {
+   readonly settledThreads: readonly EnvironmentThreadShell[];
+   readonly activeThreads: readonly EnvironmentThreadShell[];
+   readonly workingShelfEnabled: boolean;
++  readonly inboxSortOrder: InboxSortOrder;
+ }): typeof NO_DRAGGED_ORDERS {
+-  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled } = input;
++  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled, inboxSortOrder } =
++    input;
+   const thread = threadByKey.get(drag.activeKey);
+   if (thread === undefined) return NO_DRAGGED_ORDERS;
+   const others = (list: readonly EnvironmentThreadShell[]) =>
+@@ -434,6 +437,7 @@ function resolveDraggedOrders(input: {
+     activeOrder: workingShelfEnabled
+       ? sortInboxThreadsByReturn(
+           [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
++          inboxSortOrder,
+           inboxReturns.returnedAt,
+         ).map(threadShellKey)
+       : undefined,
+@@ -471,6 +475,7 @@ function useSidebarThreads(input: {
+   } = input;
+   const threads = useThreadShells();
    const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
 +  const inboxSortOrder = useClientSettings((s) => s.sidebarInboxSortOrder);
-   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-   const {
-     settleThread,
-@@ -2748,7 +2749,7 @@ export default function Sidebar() {
-     // web and mobile from the same data.
-     const sortedPinned = sortPinnedThreadsForSidebar(pinned);
-     const sortedActive = workingShelfEnabled
--      ? sortInboxThreadsByReturn(active, inboxReturns.returnedAt)
-+      ? sortInboxThreadsByReturn(active, inboxSortOrder, inboxReturns.returnedAt)
-       : sortThreadsForSidebar(active);
-     return {
-       pinnedThreads:
-@@ -2780,6 +2781,7 @@ export default function Sidebar() {
-     };
-   }, [
-     homeThreadRef,
-+    inboxSortOrder,
-     nowMinute,
+   const nowMinute = useNowMinute();
+   // Snooze wake times are second-precise, so classifying with the quantized
+   // minute would hold a woken thread on the shelf for up to a minute.
+@@ -512,6 +517,7 @@ function useSidebarThreads(input: {
+     serverConfigs,
      optimisticDrop,
-     scopedProjectKeys,
-@@ -3726,9 +3728,10 @@ export default function Sidebar() {
-         ...activeThreads.filter((candidate) => key(candidate) !== dragState.activeKey),
-         applySidebarThreadDrop(thread, "active", dragState.occurredAt),
-       ],
-+      inboxSortOrder,
-       inboxReturns.returnedAt,
-     ).map(key);
--  }, [activeThreads, dragState, threadByKey, workingShelfEnabled]);
-+  }, [activeThreads, dragState, inboxSortOrder, threadByKey, workingShelfEnabled]);
-   const sidebarSortingStrategy = useMemo(
-     () =>
-       createSidebarSortingStrategy({
+     workingShelfEnabled,
++    inboxSortOrder,
+     homeThreadRef,
+     clockKey: `${nowMinute}:${snoozeWakeTick}`,
+   });
+@@ -561,6 +567,7 @@ function useSidebarThreads(input: {
+     ...partition,
+     threads,
+     workingShelfEnabled,
++    inboxSortOrder,
+     searchableThreads: [
+       ...pinnedThreads,
+       ...activeThreads,
+@@ -607,6 +614,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
+     serverConfigs,
+     optimisticDrop,
+     workingShelfEnabled,
++    inboxSortOrder,
+     homeThreadRef,
+   } = input;
+   const preciseNow = new Date().toISOString();
+@@ -668,7 +676,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
+   // web and mobile from the same data.
+   const sortedPinned = sortPinnedThreadsForSidebar(pinned);
+   const sortedActive = workingShelfEnabled
+-    ? sortInboxThreadsByReturn(active, inboxReturns.returnedAt)
++    ? sortInboxThreadsByReturn(active, inboxSortOrder, inboxReturns.returnedAt)
+     : sortThreadsForSidebar(active);
+   return {
+     pinnedThreads:
+@@ -3078,6 +3086,7 @@ export default function Sidebar() {
+   const {
+     threads,
+     workingShelfEnabled,
++    inboxSortOrder,
+     pinnedThreads,
+     draggableThreadKeys,
+     activeReorderableThreadKeys,
+@@ -3738,6 +3747,7 @@ export default function Sidebar() {
+           settledThreads,
+           activeThreads,
+           workingShelfEnabled,
++          inboxSortOrder,
+         });
+   const sidebarSortingStrategy = createSidebarSortingStrategy({
+     items: sidebarListItems,
 diff --git a/apps/web/src/components/settings/SettingsPanels.tsx b/apps/web/src/components/settings/SettingsPanels.tsx
-index fcdc35b3c1..a0fab611ae 100644
+index 949ad3ea13..901117bda7 100644
 --- a/apps/web/src/components/settings/SettingsPanels.tsx
 +++ b/apps/web/src/components/settings/SettingsPanels.tsx
 @@ -29,6 +29,7 @@ import {
@@ -314,7 +365,7 @@ index fcdc35b3c1..a0fab611ae 100644
    MAX_APPEARANCE_CONTRAST,
    MAX_CODE_FONT_SIZE,
    MAX_GLASS_OPACITY,
-@@ -194,6 +195,12 @@ const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string>
+@@ -196,6 +197,12 @@ const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string>
  };
  const isSidebarProjectSortOrder = Schema.is(SidebarProjectSortOrder);
  
@@ -327,25 +378,17 @@ index fcdc35b3c1..a0fab611ae 100644
  const TIMESTAMP_FORMAT_LABELS = {
    locale: "System default",
    "12-hour": "12-hour",
-@@ -574,6 +581,9 @@ export function useSettingsRestore(onRestored?: () => void) {
-       DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
-         ? ["Working section"]
-         : []),
-+      ...(settings.sidebarInboxSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarInboxSortOrder
-+        ? ["Inbox order"]
-+        : []),
-       ...(settings.sidebarAutoSettleAfterDays !==
-       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
-         ? ["Auto-settle inactive threads"]
-@@ -716,6 +726,7 @@ export function useSettingsRestore(onRestored?: () => void) {
-       settings.sidebarProjectGroupingMode,
-       settings.sidebarProjectSortOrder,
-       settings.sidebarWorkingShelfEnabled,
-+      settings.sidebarInboxSortOrder,
-       settings.sidebarThreadPreviewCount,
-       settings.showSkillsInSlashMenu,
-       settings.timestampFormat,
-@@ -810,6 +821,7 @@ export function useSettingsRestore(onRestored?: () => void) {
+@@ -570,6 +577,9 @@ export function useSettingsRestore(onRestored?: () => void) {
+     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
+       ? ["Working section"]
+       : []),
++    ...(settings.sidebarInboxSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarInboxSortOrder
++      ? ["Inbox order"]
++      : []),
+     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
+       ? ["Auto-settle inactive threads"]
+       : []),
+@@ -738,6 +748,7 @@ export function useSettingsRestore(onRestored?: () => void) {
        sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
        sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
        sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
@@ -353,7 +396,7 @@ index fcdc35b3c1..a0fab611ae 100644
        sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
        sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
        sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
-@@ -2326,7 +2338,7 @@ export function GeneralSettingsPanel() {
+@@ -2248,7 +2259,7 @@ export function GeneralSettingsPanel() {
  
          <SettingsRow
            {...searchableSetting("working-shelf")}
@@ -362,7 +405,7 @@ index fcdc35b3c1..a0fab611ae 100644
            resetAction={
              settings.sidebarWorkingShelfEnabled !==
              DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
-@@ -2350,6 +2362,47 @@ export function GeneralSettingsPanel() {
+@@ -2272,6 +2283,47 @@ export function GeneralSettingsPanel() {
              />
            }
          />
@@ -411,7 +454,7 @@ index fcdc35b3c1..a0fab611ae 100644
          {supportsAutoSettlement ? (
            <>
 diff --git a/apps/web/src/components/settings/settingsSearch.ts b/apps/web/src/components/settings/settingsSearch.ts
-index 2a70cca57b..3aa7a6f43e 100644
+index 8fc82e0fe9..191591e9c8 100644
 --- a/apps/web/src/components/settings/settingsSearch.ts
 +++ b/apps/web/src/components/settings/settingsSearch.ts
 @@ -324,6 +324,12 @@ export const SETTINGS_SEARCH_ITEMS = [
@@ -504,7 +547,7 @@ index 880e6ebf31..d69b098024 100644
  
  type WorkingSortInput = Pick<
 diff --git a/packages/contracts/src/settings.ts b/packages/contracts/src/settings.ts
-index 19f56f538f..9b8d497dc4 100644
+index 1a5d69f6a9..ac11213e92 100644
 --- a/packages/contracts/src/settings.ts
 +++ b/packages/contracts/src/settings.ts
 @@ -63,6 +63,11 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
@@ -519,7 +562,7 @@ index 19f56f538f..9b8d497dc4 100644
  export const SidebarProjectGroupingMode = Schema.Literals([
    "repository",
    "repository_path",
-@@ -419,6 +424,9 @@ export const ClientSettingsSchema = Schema.Struct({
+@@ -447,6 +452,9 @@ export const ClientSettingsSchema = Schema.Struct({
    sidebarWorkingShelfEnabled: Schema.Boolean.pipe(
      Schema.withDecodingDefault(Effect.succeed(false)),
    ),
@@ -529,7 +572,7 @@ index 19f56f538f..9b8d497dc4 100644
    sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
      Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
    ),
-@@ -1578,6 +1586,7 @@ export const ClientSettingsPatch = Schema.Struct({
+@@ -1612,6 +1620,7 @@ export const ClientSettingsPatch = Schema.Struct({
    showSkillsInSlashMenu: Schema.optionalKey(Schema.Boolean),
    legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
    sidebarWorkingShelfEnabled: Schema.optionalKey(Schema.Boolean),
