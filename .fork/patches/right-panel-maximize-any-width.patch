@@ -1,4 +1,4 @@
-From 6a410116c68c0d4f4dec81590099db06acaf67d8 Mon Sep 17 00:00:00 2001
+From 575b09e4c3937570b7de3559c4845f0c0a2b669b Mon Sep 17 00:00:00 2001
 From: Jefferson-Butler1 <jefferson.butler@icloud.com>
 Date: Tue, 6 Oct 2026 10:01:54 -0700
 Subject: [PATCH] feat(web): maximize the right panel at any window width
@@ -7,23 +7,23 @@ Below the 980px breakpoint the right panel only opened as a sheet, so it
 could not be maximized. A maximized panel now renders inline and fills the
 workspace at any width, and the sheet shows the maximize control.
 ---
- apps/web/src/components/ChatView.tsx | 29 +++++++++++++++++-----------
- 1 file changed, 18 insertions(+), 11 deletions(-)
+ apps/web/src/components/ChatView.tsx | 25 ++++++++++++++++---------
+ 1 file changed, 16 insertions(+), 9 deletions(-)
 
 diff --git a/apps/web/src/components/ChatView.tsx b/apps/web/src/components/ChatView.tsx
-index f87663989a..0a6d9d6d68 100644
+index 98b3172d0c..dccb0f0ebe 100644
 --- a/apps/web/src/components/ChatView.tsx
 +++ b/apps/web/src/components/ChatView.tsx
-@@ -2049,7 +2049,7 @@ export default function ChatView(props: ChatViewProps) {
-   >({});
-   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
-     useState<Record<string, number>>({});
+@@ -1323,7 +1323,7 @@ export default function ChatView(props: ChatViewProps) {
+     window.addEventListener("dragend", clearWorkspaceFileDrag);
+     return () => window.removeEventListener("dragend", clearWorkspaceFileDrag);
+   }, [isWorkspaceFileDragActive]);
 -  const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
 +  const isNarrowRightPanelLayout = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
    const isMobileViewport = useMediaQuery("max-sm");
    const [workspaceLayoutElement, setWorkspaceLayoutElement] = useState<HTMLDivElement | null>(null);
    const threadPanelPopoverAnchorRef = useRef<HTMLElement | null>(null);
-@@ -2487,6 +2487,9 @@ export default function ChatView(props: ChatViewProps) {
+@@ -1688,6 +1688,9 @@ export default function ChatView(props: ChatViewProps) {
      panelAnimationDurationMs,
    );
    const rightPanelPresent = rightPanelPresence.present;
@@ -33,7 +33,7 @@ index f87663989a..0a6d9d6d68 100644
    const rightPanelControlsInPanel =
      shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
    const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
-@@ -2496,8 +2499,6 @@ export default function ChatView(props: ChatViewProps) {
+@@ -1697,8 +1700,6 @@ export default function ChatView(props: ChatViewProps) {
      activePreviewMiniPlayer?.source ?? null,
      renderedRightPanelSurface,
    );
@@ -42,45 +42,27 @@ index f87663989a..0a6d9d6d68 100644
    const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
    const [threadPanelPresentation, setThreadPanelPresentation] =
      useState<ThreadPanelPresentation>("inline");
-@@ -5437,7 +5438,7 @@ export default function ChatView(props: ChatViewProps) {
-       threadKey,
-       new Set(sessions.filter((session) => deviceFor(session) !== undefined).map(key)),
-     );
--    if (!previous || shouldUsePlanSidebarSheet) return;
-+    if (!previous || isNarrowRightPanelLayout) return;
-     for (const session of sessions) {
-       if (previous.has(key(session))) continue;
-       const device = deviceFor(session);
-@@ -5467,7 +5468,7 @@ export default function ChatView(props: ChatViewProps) {
-     activeThreadRef,
-     autoShowFloatingPreview,
-     deviceStateLoaded,
--    shouldUsePlanSidebarSheet,
-+    isNarrowRightPanelLayout,
-     deviceState.sessions,
-     deviceState.devices,
-   ]);
-@@ -5703,7 +5704,7 @@ export default function ChatView(props: ChatViewProps) {
-     }
-     if (!clientSettingsHydrated) return;
- 
--    const proactivePanelsEnabled = settings.proactivePanelsEnabled && !shouldUsePlanSidebarSheet;
-+    const proactivePanelsEnabled = settings.proactivePanelsEnabled && !isNarrowRightPanelLayout;
-     const eligibleLink =
-       proactivePanelsEnabled &&
-       shouldOpenProactivePullRequest(previousTargetKey, proactivePullRequestsKey);
-@@ -5794,7 +5795,7 @@ export default function ChatView(props: ChatViewProps) {
-     visiblePullRequestCount,
- 
-     settings.proactivePanelsEnabled,
--    shouldUsePlanSidebarSheet,
-+    isNarrowRightPanelLayout,
+@@ -3677,7 +3678,7 @@ export default function ChatView(props: ChatViewProps) {
+     serverBrowserAvailable: activeEnvironmentServerBrowser,
+     panelSurfaces: rightPanelState.surfaces,
+     miniPlayerSource: activePreviewMiniPlayer?.source ?? null,
+-    sheetLayout: shouldUsePlanSidebarSheet,
++    sheetLayout: isNarrowRightPanelLayout,
+   });
+   const openFileSurface = (relativePath: string) => {
+     if (!activeThreadRef || !activeProject) return;
+@@ -3712,7 +3713,7 @@ export default function ChatView(props: ChatViewProps) {
+   const activeRunningTurnId = activeRuntime?.activeRunId ?? null;
+   useProactivePanels({
+     threadRef: isServerThread ? activeThreadRef : null,
+-    enabled: settings.proactivePanelsEnabled && !shouldUsePlanSidebarSheet,
++    enabled: settings.proactivePanelsEnabled && !isNarrowRightPanelLayout,
+     settingsHydrated: clientSettingsHydrated,
      threadDetailLoading,
-   ]);
-   const closePreviewPanel = () => {
-@@ -5962,13 +5963,13 @@ export default function ChatView(props: ChatViewProps) {
+     runningTurnId: activeRunningTurnId,
+@@ -3872,13 +3873,13 @@ export default function ChatView(props: ChatViewProps) {
+   };
    const toggleThreadPanelStable = useStableCallback(toggleThreadPanel);
-   // A thread started for a link the OS opened shows its browser maximized, like a browser window.
    useEffect(() => {
 -    if (!canMaximizeRightPanel) return;
 +    if (!rightPanelOpen) return;
@@ -95,8 +77,8 @@ index f87663989a..0a6d9d6d68 100644
      useRightPanelStore.getState().setMaximized(activeThreadRef, !rightPanelMaximized);
    };
    const toggleRightPanelMaximizedStable = useStableCallback(toggleRightPanelMaximized);
-@@ -11879,7 +11880,13 @@ export default function ChatView(props: ChatViewProps) {
-             // the sheet opens.
+@@ -8578,7 +8579,13 @@ export default function ChatView(props: ChatViewProps) {
+             inlineSize={previewPanelInlineSize}
              layoutControls={
                rightPanelOpen ? (
 -                <div className="mr-px flex items-center">{panelToggleControls}</div>

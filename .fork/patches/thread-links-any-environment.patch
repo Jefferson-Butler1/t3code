@@ -1,4 +1,4 @@
-From b0ff2c733da394c913d1d53472bb8d40daa7e932 Mon Sep 17 00:00:00 2001
+From 84c75419570d6e8f00ae5c617cc45fbb0808627c Mon Sep 17 00:00:00 2001
 From: Jefferson-Butler1 <jefferson.butler@icloud.com>
 Date: Thu, 15 Oct 2026 12:24:45 -0700
 Subject: [PATCH] fix(web,mobile): thread links open threads on other machines
@@ -14,10 +14,10 @@ in every connected environment.
  3 files changed, 28 insertions(+), 6 deletions(-)
 
 diff --git a/apps/mobile/src/features/threads/ThreadFeed.tsx b/apps/mobile/src/features/threads/ThreadFeed.tsx
-index a0cb6ee339..20ff96940f 100644
+index 84fb8d84d6..4f4af09e65 100644
 --- a/apps/mobile/src/features/threads/ThreadFeed.tsx
 +++ b/apps/mobile/src/features/threads/ThreadFeed.tsx
-@@ -209,7 +209,7 @@ import {
+@@ -212,7 +212,7 @@ import {
  } from "../../state/assets";
  import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
  import { usePreparedConnection } from "../../state/session";
@@ -26,15 +26,15 @@ index a0cb6ee339..20ff96940f 100644
  import { useThreadSelection } from "../../state/use-thread-selection";
  import { composerDocumentAttachmentRecord } from "../../lib/composerContext";
  import * as Option from "effect/Option";
-@@ -1790,7 +1790,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
-       const linkedThreadId = parseThreadLinkHref(href);
-       if (linkedThreadId) {
-         navigation.navigate("Thread", {
--          environmentId: String(props.environmentId),
-+          environmentId: String(readThreadLinkEnvironmentId(linkedThreadId, props.environmentId)),
-           threadId: String(linkedThreadId),
-         });
-         return;
+@@ -1789,7 +1789,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
+     const linkedThreadId = parseThreadLinkHref(href);
+     if (linkedThreadId) {
+       navigation.navigate("Thread", {
+-        environmentId: String(props.environmentId),
++        environmentId: String(readThreadLinkEnvironmentId(linkedThreadId, props.environmentId)),
+         threadId: String(linkedThreadId),
+       });
+       return;
 diff --git a/apps/mobile/src/state/entities.ts b/apps/mobile/src/state/entities.ts
 index 144325fb2d..a47aaa6713 100644
 --- a/apps/mobile/src/state/entities.ts
