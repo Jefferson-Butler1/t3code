@@ -10,6 +10,7 @@ import type {
 import {
   type ChatAttachment,
   CommandId,
+  type IsoDateTime,
   MessageId,
   OrchestrationV2StopWorkflowError,
   type OrchestrationV2StopWorkflowInput,
@@ -414,6 +415,27 @@ export interface ThreadManagementServiceShape {
     { readonly sequence: number } | { readonly settlesWhenTurnEnds: true },
     Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
   >;
+  /**
+   * A run that completes after the snooze wakes the thread, so an agent's
+   * own snooze would end with its turn. It waits for that run to complete
+   * instead. A run that ends any other way leaves the thread awake, as does a
+   * snooze someone else set meanwhile or a wake time that already passed.
+   */
+  readonly snoozeAfterRun: (input: {
+    readonly projectId: ProjectId;
+    readonly threadId: ThreadId;
+    readonly runId: RunId;
+    readonly snoozedUntil: IsoDateTime;
+  }) => Effect.Effect<void, ThreadManagementFailure>;
+  readonly snoozeThread: (input: {
+    readonly threadId: ThreadId;
+    readonly commandId: CommandId;
+    readonly snoozedUntil: IsoDateTime;
+    readonly byOwnAgent: boolean;
+  }) => Effect.Effect<
+    { readonly sequence: number } | { readonly snoozesWhenTurnEnds: true },
+    Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
+  >;
   readonly interruptThread: (
     input: ThreadManagementInterruptInput,
   ) => Effect.Effect<ThreadManagementInterruptResult, ThreadManagementFailure>;
@@ -504,7 +526,7 @@ function latestSteerableRun(
     .toSorted((left, right) => right.ordinal - left.ordinal)[0];
 }
 
-const SETTLE_AFTER_RUN_WAIT_MS = 24 * 60 * 60 * 1_000;
+const AFTER_RUN_WAIT_MS = 24 * 60 * 60 * 1_000;
 
 const make = Effect.gen(function* () {
   const threadDispatch = yield* ThreadCommandExecutor.ThreadCommandExecutor;
@@ -930,7 +952,7 @@ const make = Effect.gen(function* () {
   const settleAfterRun: ThreadManagementServiceShape["settleAfterRun"] = Effect.fn(
     "orchestrationV2.threadManagement.settleAfterRun",
   )(function* (input) {
-    const { run } = yield* waitForThread({ ...input, timeoutMs: SETTLE_AFTER_RUN_WAIT_MS });
+    const { run } = yield* waitForThread({ ...input, timeoutMs: AFTER_RUN_WAIT_MS });
     if (run?.status !== "completed") return;
     yield* dispatch({
       type: "thread.settle",
@@ -955,6 +977,45 @@ const make = Effect.gen(function* () {
       type: "thread.settle",
       commandId: input.commandId,
       threadId: input.threadId,
+    });
+    return { sequence: result.sequence };
+  });
+
+  const snoozeAfterRun: ThreadManagementServiceShape["snoozeAfterRun"] = Effect.fn(
+    "orchestrationV2.threadManagement.snoozeAfterRun",
+  )(function* (input) {
+    const { run } = yield* waitForThread({ ...input, timeoutMs: AFTER_RUN_WAIT_MS });
+    if (run?.status !== "completed") return;
+    const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+    if (Date.parse(input.snoozedUntil) <= nowMs) return;
+    const snoozedUntil = (yield* orchestrator.getThreadShell(input.threadId))?.snoozedUntil;
+    if (snoozedUntil != null && DateTime.toEpochMillis(snoozedUntil) > nowMs) return;
+    yield* dispatch({
+      type: "thread.snooze",
+      commandId: CommandId.make(`server:snooze-after-run:${input.runId}`),
+      threadId: input.threadId,
+      snoozedUntil: input.snoozedUntil,
+    });
+  });
+
+  const snoozeThread: ThreadManagementServiceShape["snoozeThread"] = Effect.fn(
+    "orchestrationV2.threadManagement.snoozeThread",
+  )(function* (input) {
+    const shell = input.byOwnAgent ? yield* orchestrator.getThreadShell(input.threadId) : null;
+    if (shell != null && shell.activeRunId !== null) {
+      yield* snoozeAfterRun({
+        projectId: shell.projectId,
+        threadId: shell.id,
+        runId: shell.activeRunId,
+        snoozedUntil: input.snoozedUntil,
+      }).pipe(Effect.ignoreCause({ log: true }), Effect.forkIn(layerScope));
+      return { snoozesWhenTurnEnds: true } as const;
+    }
+    const result = yield* dispatch({
+      type: "thread.snooze",
+      commandId: input.commandId,
+      threadId: input.threadId,
+      snoozedUntil: input.snoozedUntil,
     });
     return { sequence: result.sequence };
   });
@@ -1172,6 +1233,8 @@ const make = Effect.gen(function* () {
     waitForThread,
     settleAfterRun,
     settleThread,
+    snoozeAfterRun,
+    snoozeThread,
     interruptThread,
     stopDelegatedTasks,
     stopWorkflow,

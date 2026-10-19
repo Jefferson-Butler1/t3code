@@ -383,6 +383,9 @@ List and read results report `snoozed` and `snoozedUntil`, and
 `t3_thread_list` filters on `snoozed`. The server's `isSnoozed` follows the
 client's `effectiveSnoozed`, so agents and the sidebar agree: a snoozed thread
 wakes early when it has a pending request, fails, or completes after the snooze.
+That is why an agent snoozing its own thread mid-turn has the snooze applied
+when the turn completes, like settling: snoozing at once would let that same
+completion wake the thread.
 
 ### `t3_thread_update`
 

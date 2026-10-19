@@ -1077,3 +1077,66 @@ it.effect.each([
     expect(dispatched).toEqual(settles ? ["thread.settle"] : []);
   }),
 );
+
+const HOUR_MS = 60 * 60 * 1_000;
+
+it.effect.each([
+  { case: "the run completes", status: "completed" as const, snoozes: true },
+  { case: "the run fails", status: "failed" as const, snoozes: false },
+  { case: "the run is interrupted", status: "interrupted" as const, snoozes: false },
+  {
+    case: "someone else snoozed meanwhile",
+    status: "completed" as const,
+    existingSnoozeMs: 2 * HOUR_MS,
+    snoozes: false,
+  },
+  { case: "the wake time passed", status: "completed" as const, wakeMs: -HOUR_MS, snoozes: false },
+])("snoozeAfterRun snoozes only when $case", ({ status, existingSnoozeMs, wakeMs, snoozes }) =>
+  Effect.gen(function* () {
+    const projectId = ProjectId.make("project:thread-management:snooze-after-run");
+    const threadId = ThreadId.make("thread:thread-management:snooze-after-run");
+    const runId = RunId.make("run:thread-management:snooze-after-run");
+    const now = yield* DateTime.now;
+    const dispatched: Array<string> = [];
+    const layerTest = ThreadManagementService.layer.pipe(
+      Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+      Layer.provide(
+        Layer.mock(Orchestrator.OrchestratorV2)({
+          getThreadEventSequence: () => Effect.succeed(0),
+          restartContinuationPending: () => Effect.succeed(false),
+          getThreadRecords: () =>
+            Effect.succeed({
+              thread: { id: threadId, projectId, deletedAt: null },
+              runs: [{ id: runId, status }],
+            } as unknown as OrchestrationV2ThreadProjection),
+          getThreadShell: () =>
+            Effect.succeed({
+              snoozedUntil:
+                existingSnoozeMs === undefined
+                  ? null
+                  : DateTime.add(now, { milliseconds: existingSnoozeMs }),
+            } as unknown as OrchestrationV2ThreadShell),
+          dispatch: (command) =>
+            Effect.sync(() => {
+              dispatched.push(command.type);
+              return { sequence: 1, storedEvents: [] } as never;
+            }),
+        }),
+      ),
+      Layer.provide(ServerSettings.layerTest()),
+      Layer.provide(layerReceiptsTest),
+    );
+    const service = yield* ThreadManagementService.ThreadManagementService.pipe(
+      Effect.provide(layerTest),
+    );
+
+    yield* service.snoozeAfterRun({
+      projectId,
+      threadId,
+      runId,
+      snoozedUntil: DateTime.formatIso(DateTime.add(now, { milliseconds: wakeMs ?? HOUR_MS })),
+    });
+
+    expect(dispatched).toEqual(snoozes ? ["thread.snooze"] : []);
+  }),
+);
