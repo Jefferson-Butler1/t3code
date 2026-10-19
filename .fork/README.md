@@ -25,6 +25,8 @@ Upstream's v2 orchestrator ([#2829](https://github.com/pingdotgg/t3code/pull/282
 
 `inbox-order.patch` adds an Inbox order setting (web Settings → General, mobile Settings → Threads → Beta) for the Working section's time-ordered inbox. Oldest first lists threads by when each last needed you, longest-waiting on top, so the inbox works as a queue.
 
+`agent-self-snooze.patch` fixes upstream [#18985](https://github.com/pingdotgg/t3code/issues/18985): an agent that snoozed its own thread was woken by finishing that same turn. The snooze now applies when the turn completes, the same way upstream already defers an agent settling its own thread. Drop it once upstream fixes #18985.
+
 The workflow typechecks the web app and lints the patched files. When a patch conflicts, regenerate it from a clean checkout of the failing upstream tag. To leave the fork entirely, disable the LaunchAgent described below and install an official T3 Nightly. Fork installation/removal does not require deleting T3 data.
 
 ## macOS installation and signing
