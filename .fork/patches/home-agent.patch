@@ -1,4 +1,4 @@
-From 2ed5a7602693dc99993a5f6aeeb986c441b126e6 Mon Sep 17 00:00:00 2001
+From d59da940dc7967eedc1757ac6df0e0303bf39d0c Mon Sep 17 00:00:00 2001
 From: Jefferson-Butler1 <jefferson.butler@icloud.com>
 Date: Wed, 7 Oct 2026 10:04:05 -0700
 Subject: [PATCH] feat(home): add Home, an agent that manages threads across
@@ -15,7 +15,7 @@ preview browser, and the snooze/link work that already landed in #16782.
  .../src/ipc/methods/keepAliveOnClose.ts       |  18 +
  apps/desktop/src/preload.ts                   |   2 +
  apps/desktop/src/window/DesktopWindow.test.ts |   1 +
- apps/desktop/src/window/DesktopWindow.ts      |  13 +-
+ apps/desktop/src/window/DesktopWindow.ts      |  11 +-
  apps/server/src/auth/RpcAuthorization.ts      |   8 +
  apps/server/src/home/FleetBroker.test.ts      |  85 +++
  apps/server/src/home/FleetBroker.ts           | 225 +++++++
@@ -96,7 +96,7 @@ preview browser, and the snooze/link work that already landed in #16782.
  packages/contracts/src/settings.ts            |   8 +
  packages/contracts/src/threadMetadataMcp.ts   |   2 +
  packages/shared/src/keybindings.ts            |   1 +
- 87 files changed, 5048 insertions(+), 282 deletions(-)
+ 87 files changed, 5046 insertions(+), 282 deletions(-)
  create mode 100644 apps/desktop/src/ipc/methods/keepAliveOnClose.ts
  create mode 100644 apps/server/src/home/FleetBroker.test.ts
  create mode 100644 apps/server/src/home/FleetBroker.ts
@@ -225,26 +225,10 @@ index 56206a2279..e69f598794 100644
            DesktopAppSettings.layerTest(),
            layerDesktopClientSettings,
 diff --git a/apps/desktop/src/window/DesktopWindow.ts b/apps/desktop/src/window/DesktopWindow.ts
-index 5d14fdfdc5..2583cd064f 100644
+index 5d14fdfdc5..424780f31c 100644
 --- a/apps/desktop/src/window/DesktopWindow.ts
 +++ b/apps/desktop/src/window/DesktopWindow.ts
-@@ -12,6 +12,7 @@ import { type DesktopSnapShotEvent, DEFAULT_CLIENT_SETTINGS } from "@t3tools/con
- 
- import * as DesktopAssets from "../app/DesktopAssets.ts";
- import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-+import * as DesktopState from "../app/DesktopState.ts";
- import { makeComponentLogger } from "../app/DesktopObservability.ts";
- import * as DesktopState from "../app/DesktopState.ts";
- import * as ElectronMenu from "../electron/ElectronMenu.ts";
-@@ -301,6 +302,7 @@ export const make = Effect.gen(function* () {
-   const clientSettings = yield* DesktopClientSettings.DesktopClientSettings;
-   const electronApp = yield* ElectronApp.ElectronApp;
-   const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
-+  const desktopState = yield* DesktopState.DesktopState;
-   const backendReadyRef = yield* Ref.make(false);
-   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
-   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
-@@ -689,8 +691,17 @@ export const make = Effect.gen(function* () {
+@@ -689,8 +689,17 @@ export const make = Effect.gen(function* () {
      window.on("move", scheduleBoundsPersist);
      window.on("maximize", scheduleBoundsPersist);
      window.on("unmaximize", scheduleBoundsPersist);
