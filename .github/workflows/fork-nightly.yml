@@ -217,6 +217,10 @@ jobs:
           run-install: false
           cache: false
 
+      # The desktop build compiles a libsecret helper on Linux hosts.
+      - name: Install desktop build headers
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
+
       - name: Repair the patch series with Claude
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -247,6 +251,7 @@ jobs:
           path: |
             repair-transcript.jsonl
             repair-summary.md
+            control/.fork/
           if-no-files-found: ignore
 
       - name: Re-verify the repaired series
