@@ -224,6 +224,9 @@ jobs:
           PREVIOUS_UPSTREAM_COMMIT: ${{ steps.failed.outputs.previous_upstream_commit }}
         run: |
           set -euo pipefail
+          # Pasted secrets often carry stray whitespace, which the API rejects.
+          CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN//[[:space:]]/}"
+          export CLAUDE_CODE_OAUTH_TOKEN
           if [[ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]]; then
             echo "::error::Set the CLAUDE_CODE_OAUTH_TOKEN secret (claude setup-token) to enable repairs."
             exit 1
