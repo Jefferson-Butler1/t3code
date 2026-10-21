@@ -9,6 +9,10 @@ on:
         description: Build even if the upstream nightly and patch series are unchanged
         type: boolean
         default: false
+      allow_repair:
+        description: Let Claude repair the patch series if this run fails
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -75,6 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           (cd apps/web && vp run typecheck)
+          (cd apps/desktop && vp run typecheck)
           vp lint apps/web/src/components/ChatView.tsx scripts/build-desktop-artifact.ts
           git diff --exit-code
 
@@ -156,3 +161,140 @@ jobs:
       - name: Unchanged
         if: steps.prepare.outputs.changed == 'false'
         run: echo 'The latest upstream nightly and this patch series already have a successful release.' >> "$GITHUB_STEP_SUMMARY"
+
+  # When the nightly fails, Claude refreshes the patch series against the failed
+  # upstream tag (.fork/REPAIR.md). The agent may only read and edit files and run
+  # git and vp; it holds no GitHub credentials. The workflow re-verifies its result,
+  # lands it on fork-maintenance and runs the nightly once more without repair.
+  repair:
+    needs: nightly
+    if: failure() && github.repository == 'Jefferson-Butler1/t3code' && inputs.allow_repair != false
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: write
+      actions: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      GIT_AUTHOR_NAME: github-actions[bot]
+      GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      GIT_COMMITTER_NAME: github-actions[bot]
+      GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      CONTROL: ${{ github.workspace }}/control
+      REPAIR_SUMMARY: ${{ github.workspace }}/repair-summary.md
+      FAILED_RUN_LOG: ${{ github.workspace }}/failed-run.log
+    steps:
+      - name: Check out fork maintenance
+        uses: actions/checkout@v6
+        with:
+          ref: fork-maintenance
+          path: control
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find the failed upstream nightly
+        id: failed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(gh api 'repos/pingdotgg/t3code/releases?per_page=100' --jq '
+            [.[] | select(.prerelease and (.draft | not)
+              and (.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-nightly\\.[0-9]{8}\\.[0-9]+$")))]
+            | max_by(.published_at) | .tag_name')
+          git -C control fetch --no-tags https://github.com/pingdotgg/t3code.git "refs/tags/$tag:refs/tags/$tag"
+          git -C control fetch --no-tags origin patched-nightly
+          previous=$(git -C control show FETCH_HEAD:.fork-build.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["upstream_commit"])')
+          job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" --jq '.jobs[] | select(.name == "nightly") | .id')
+          gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs" | grep -v 'Updating files:' | tail -n 600 > "$FAILED_RUN_LOG"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "previous_upstream_commit=$previous" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: control/package.json
+          run-install: false
+          cache: false
+
+      - name: Repair the patch series with Claude
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          UPSTREAM_TAG: ${{ steps.failed.outputs.tag }}
+          PREVIOUS_UPSTREAM_COMMIT: ${{ steps.failed.outputs.previous_upstream_commit }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]]; then
+            echo "::error::Set the CLAUDE_CODE_OAUTH_TOKEN secret (claude setup-token) to enable repairs."
+            exit 1
+          fi
+          npm install --global @anthropic-ai/claude-code
+          claude -p "Follow the instructions in $CONTROL/.fork/REPAIR.md. Paths and values: CONTROL=$CONTROL, UPSTREAM_TAG=$UPSTREAM_TAG, FAILED_RUN_LOG=$FAILED_RUN_LOG, REPAIR_SUMMARY=$REPAIR_SUMMARY, RUNNER_TEMP=$RUNNER_TEMP. The previous successful build used upstream commit $PREVIOUS_UPSTREAM_COMMIT." \
+            --model claude-opus-5-5 \
+            --permission-mode dontAsk \
+            --allowedTools 'Read' 'Edit' 'Write' 'Glob' 'Grep' 'Bash(git *)' 'Bash(vp *)' \
+            --settings '{"includeCoAuthoredBy": false}' \
+            --output-format stream-json --verbose > repair-transcript.jsonl
+
+      - name: Keep the repair transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repair-transcript
+          path: |
+            repair-transcript.jsonl
+            repair-summary.md
+          if-no-files-found: ignore
+
+      - name: Re-verify the repaired series
+        id: verify
+        env:
+          UPSTREAM_TAG: ${{ steps.failed.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cat "$REPAIR_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$(head -n 1 "$REPAIR_SUMMARY")" == "REPAIR FAILED"* ]]; then
+            echo "::error::Claude could not repair the series; see the summary."
+            exit 1
+          fi
+          changed=$(git -C control status --porcelain --untracked-files=all)
+          if [[ -z "$changed" ]]; then
+            echo "Nothing to repair: the series already applies." >> "$GITHUB_STEP_SUMMARY"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -vE '^.. \.fork/(series|README\.md|patches/[A-Za-z0-9._-]+\.patch)$' <<<"$changed"; then
+            echo "::error::The repair changed files outside the patch series."
+            exit 1
+          fi
+          if grep -ilE 'co-authored-by:.*claude|noreply@anthropic\.com|generated with claude' control/.fork/patches/*.patch; then
+            echo "::error::A patch carries AI attribution."
+            exit 1
+          fi
+          git -C control worktree add --detach "$RUNNER_TEMP/verify" "$UPSTREAM_TAG"
+          cd "$RUNNER_TEMP/verify"
+          while read -r name; do
+            [[ -z "$name" || "$name" == \#* ]] && continue
+            git -c core.hooksPath=/dev/null am "$CONTROL/.fork/patches/$name"
+          done < "$CONTROL/.fork/series"
+          vp install --frozen-lockfile
+          vp -C apps/web run typecheck
+          vp -C apps/desktop run typecheck
+          vp -C apps/mobile run typecheck
+          vp -C apps/desktop run build
+          vp lint apps/web/src/components/ChatView.tsx scripts/build-desktop-artifact.ts
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Land the repair and rebuild
+        if: steps.verify.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git -C control add .fork
+          git -C control -c core.hooksPath=/dev/null commit -F "$REPAIR_SUMMARY"
+          # Fast-forward only: a concurrent edit to fork-maintenance wins over the repair.
+          git -C control push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/fork-maintenance
+          gh workflow run fork-nightly.yml --repo "$GITHUB_REPOSITORY" --ref fork-maintenance -f allow_repair=false
