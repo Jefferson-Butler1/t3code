@@ -186,13 +186,10 @@ jobs:
       REPAIR_SUMMARY: ${{ github.workspace }}/repair-summary.md
       FAILED_RUN_LOG: ${{ github.workspace }}/failed-run.log
     steps:
+      # A plain clone, so the agent's checkout never holds a token. actions/checkout
+      # with persist-credentials: false fails its cleanup on a vendored submodule.
       - name: Check out fork maintenance
-        uses: actions/checkout@v6
-        with:
-          ref: fork-maintenance
-          path: control
-          fetch-depth: 0
-          persist-credentials: false
+        run: git clone --branch fork-maintenance "https://github.com/$GITHUB_REPOSITORY.git" control
 
       - name: Find the failed upstream nightly
         id: failed
