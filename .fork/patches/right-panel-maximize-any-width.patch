@@ -1,4 +1,4 @@
-From 55d0c260751782d9920e25eac911666e9aef0f12 Mon Sep 17 00:00:00 2001
+From 5c5a6e75178ce5a9cc0194b8f5aca625db84c6eb Mon Sep 17 00:00:00 2001
 From: Jefferson-Butler1 <jefferson.butler@icloud.com>
 Date: Tue, 6 Oct 2026 10:01:54 -0700
 Subject: [PATCH] feat(web): maximize the right panel at any window width
@@ -11,10 +11,10 @@ workspace at any width, and the sheet shows the maximize control.
  1 file changed, 16 insertions(+), 9 deletions(-)
 
 diff --git a/apps/web/src/components/ChatView.tsx b/apps/web/src/components/ChatView.tsx
-index 1f9eb813a4..5c09cd3e1a 100644
+index da367a88d0..7ffece8890 100644
 --- a/apps/web/src/components/ChatView.tsx
 +++ b/apps/web/src/components/ChatView.tsx
-@@ -1395,7 +1395,7 @@ export default function ChatView(props: ChatViewProps) {
+@@ -887,7 +887,7 @@ export default function ChatView(props: ChatViewProps) {
      window.addEventListener("dragend", clearWorkspaceFileDrag);
      return () => window.removeEventListener("dragend", clearWorkspaceFileDrag);
    }, [isWorkspaceFileDragActive]);
@@ -23,7 +23,7 @@ index 1f9eb813a4..5c09cd3e1a 100644
    const isMobileViewport = useMediaQuery("max-sm");
    const [workspaceLayoutElement, setWorkspaceLayoutElement] = useState<HTMLDivElement | null>(null);
    const threadPanelPopoverAnchorRef = useRef<HTMLElement | null>(null);
-@@ -1763,6 +1763,9 @@ export default function ChatView(props: ChatViewProps) {
+@@ -1221,6 +1221,9 @@ export default function ChatView(props: ChatViewProps) {
      panelAnimationDurationMs,
    );
    const rightPanelPresent = rightPanelPresence.present;
@@ -33,7 +33,7 @@ index 1f9eb813a4..5c09cd3e1a 100644
    const rightPanelControlsInPanel =
      shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
    const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
-@@ -1772,8 +1775,6 @@ export default function ChatView(props: ChatViewProps) {
+@@ -1230,8 +1233,6 @@ export default function ChatView(props: ChatViewProps) {
      activePreviewMiniPlayer?.source ?? null,
      renderedRightPanelSurface,
    );
@@ -42,7 +42,7 @@ index 1f9eb813a4..5c09cd3e1a 100644
    const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
    const [threadPanelPresentation, setThreadPanelPresentation] =
      useState<ThreadPanelPresentation>("inline");
-@@ -3825,7 +3826,7 @@ export default function ChatView(props: ChatViewProps) {
+@@ -2879,7 +2880,7 @@ export default function ChatView(props: ChatViewProps) {
      serverBrowserAvailable: activeEnvironmentServerBrowser,
      panelSurfaces: rightPanelState.surfaces,
      miniPlayerSource: activePreviewMiniPlayer?.source ?? null,
@@ -51,7 +51,7 @@ index 1f9eb813a4..5c09cd3e1a 100644
    });
    const openFileSurface = (relativePath: string) => {
      if (!activeThreadRef || !activeProject) return;
-@@ -3860,7 +3861,7 @@ export default function ChatView(props: ChatViewProps) {
+@@ -2914,7 +2915,7 @@ export default function ChatView(props: ChatViewProps) {
    const activeRunningTurnId = activeRuntime?.activeRunId ?? null;
    useProactivePanels({
      threadRef: isServerThread ? activeThreadRef : null,
@@ -60,7 +60,7 @@ index 1f9eb813a4..5c09cd3e1a 100644
      settingsHydrated: clientSettingsHydrated,
      threadDetailLoading,
      runningTurnId: activeRunningTurnId,
-@@ -4020,13 +4021,13 @@ export default function ChatView(props: ChatViewProps) {
+@@ -3074,13 +3075,13 @@ export default function ChatView(props: ChatViewProps) {
    };
    const toggleThreadPanelStable = useStableCallback(toggleThreadPanel);
    useEffect(() => {
@@ -77,21 +77,21 @@ index 1f9eb813a4..5c09cd3e1a 100644
      useRightPanelStore.getState().setMaximized(activeThreadRef, !rightPanelMaximized);
    };
    const toggleRightPanelMaximizedStable = useStableCallback(toggleRightPanelMaximized);
-@@ -8855,7 +8856,13 @@ export default function ChatView(props: ChatViewProps) {
-             inlineSize={previewPanelInlineSize}
-             layoutControls={
-               rightPanelOpen ? (
--                <div className="mr-px flex items-center">{panelToggleControls}</div>
-+                <div className="mr-px flex items-center gap-1">
-+                  <RightPanelMaximizeControl
-+                    maximized={false}
-+                    onToggle={toggleRightPanelMaximizedStable}
-+                  />
-+                  {panelToggleControls}
-+                </div>
-               ) : null
-             }
-             surfaces={renderedRightPanelSurfaces}
+@@ -7193,7 +7194,13 @@ export default function ChatView(props: ChatViewProps) {
+           maximized={rightPanelMaximized}
+           layoutControls={
+             rightPanelOpen ? (
+-              <div className="mr-px flex items-center">{panelToggleControls}</div>
++              <div className="mr-px flex items-center gap-1">
++                <RightPanelMaximizeControl
++                  maximized={false}
++                  onToggle={toggleRightPanelMaximizedStable}
++                />
++                {panelToggleControls}
++              </div>
+             ) : null
+           }
+           surfaces={renderedRightPanelSurfaces}
 -- 
-2.56.0
+2.55.0
 
