@@ -205,7 +205,8 @@ jobs:
           git -C control fetch --no-tags origin patched-nightly
           previous=$(git -C control show FETCH_HEAD:.fork-build.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["upstream_commit"])')
           job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" --jq '.jobs[] | select(.name == "nightly") | .id')
-          gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs" | grep -v 'Updating files:' | tail -n 600 > "$FAILED_RUN_LOG"
+          gh api --allow-escape-sequences "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs" \
+            | sed 's/\x1b\[[0-9;]*m//g' | grep -v 'Updating files:' | tail -n 600 > "$FAILED_RUN_LOG"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "previous_upstream_commit=$previous" >> "$GITHUB_OUTPUT"
 
