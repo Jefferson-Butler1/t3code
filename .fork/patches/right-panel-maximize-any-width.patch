@@ -1,4 +1,4 @@
-From 5c5a6e75178ce5a9cc0194b8f5aca625db84c6eb Mon Sep 17 00:00:00 2001
+From 1ff184ac9b647ecc130a51a084a9e6d04f651ef1 Mon Sep 17 00:00:00 2001
 From: Jefferson-Butler1 <jefferson.butler@icloud.com>
 Date: Tue, 6 Oct 2026 10:01:54 -0700
 Subject: [PATCH] feat(web): maximize the right panel at any window width
@@ -7,14 +7,22 @@ Below the 980px breakpoint the right panel only opened as a sheet, so it
 could not be maximized. A maximized panel now renders inline and fills the
 workspace at any width, and the sheet shows the maximize control.
 ---
- apps/web/src/components/ChatView.tsx | 25 ++++++++++++++++---------
- 1 file changed, 16 insertions(+), 9 deletions(-)
+ apps/web/src/components/ChatView.tsx | 26 +++++++++++++++++---------
+ 1 file changed, 17 insertions(+), 9 deletions(-)
 
 diff --git a/apps/web/src/components/ChatView.tsx b/apps/web/src/components/ChatView.tsx
-index da367a88d0..7ffece8890 100644
+index 92707af8ca..e98e4a07fc 100644
 --- a/apps/web/src/components/ChatView.tsx
 +++ b/apps/web/src/components/ChatView.tsx
-@@ -887,7 +887,7 @@ export default function ChatView(props: ChatViewProps) {
+@@ -271,6 +271,7 @@ import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
+ import {
+   PanelLayoutControls,
+   type PanelLayoutControlsProps,
++  RightPanelMaximizeControl,
+   ThreadPanelHeaderControl,
+   WorkspaceTitlebarControls,
+ } from "./chat/PanelLayoutControls";
+@@ -652,7 +653,7 @@ export default function ChatView(props: ChatViewProps) {
      window.addEventListener("dragend", clearWorkspaceFileDrag);
      return () => window.removeEventListener("dragend", clearWorkspaceFileDrag);
    }, [isWorkspaceFileDragActive]);
@@ -23,7 +31,7 @@ index da367a88d0..7ffece8890 100644
    const isMobileViewport = useMediaQuery("max-sm");
    const [workspaceLayoutElement, setWorkspaceLayoutElement] = useState<HTMLDivElement | null>(null);
    const threadPanelPopoverAnchorRef = useRef<HTMLElement | null>(null);
-@@ -1221,6 +1221,9 @@ export default function ChatView(props: ChatViewProps) {
+@@ -964,6 +965,9 @@ export default function ChatView(props: ChatViewProps) {
      panelAnimationDurationMs,
    );
    const rightPanelPresent = rightPanelPresence.present;
@@ -33,7 +41,7 @@ index da367a88d0..7ffece8890 100644
    const rightPanelControlsInPanel =
      shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
    const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
-@@ -1230,8 +1233,6 @@ export default function ChatView(props: ChatViewProps) {
+@@ -973,8 +977,6 @@ export default function ChatView(props: ChatViewProps) {
      activePreviewMiniPlayer?.source ?? null,
      renderedRightPanelSurface,
    );
@@ -42,16 +50,16 @@ index da367a88d0..7ffece8890 100644
    const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
    const [threadPanelPresentation, setThreadPanelPresentation] =
      useState<ThreadPanelPresentation>("inline");
-@@ -2879,7 +2880,7 @@ export default function ChatView(props: ChatViewProps) {
+@@ -1906,7 +1908,7 @@ export default function ChatView(props: ChatViewProps) {
      serverBrowserAvailable: activeEnvironmentServerBrowser,
      panelSurfaces: rightPanelState.surfaces,
      miniPlayerSource: activePreviewMiniPlayer?.source ?? null,
 -    sheetLayout: shouldUsePlanSidebarSheet,
 +    sheetLayout: isNarrowRightPanelLayout,
    });
-   const openFileSurface = (relativePath: string) => {
-     if (!activeThreadRef || !activeProject) return;
-@@ -2914,7 +2915,7 @@ export default function ChatView(props: ChatViewProps) {
+   // The thread's own change request, placed against the project it belongs to. Without a
+   // project there is nothing to resolve it against, so the caller falls back to the browser.
+@@ -1936,7 +1938,7 @@ export default function ChatView(props: ChatViewProps) {
    const activeRunningTurnId = activeRuntime?.activeRunId ?? null;
    useProactivePanels({
      threadRef: isServerThread ? activeThreadRef : null,
@@ -60,9 +68,9 @@ index da367a88d0..7ffece8890 100644
      settingsHydrated: clientSettingsHydrated,
      threadDetailLoading,
      runningTurnId: activeRunningTurnId,
-@@ -3074,13 +3075,13 @@ export default function ChatView(props: ChatViewProps) {
-   };
-   const toggleThreadPanelStable = useStableCallback(toggleThreadPanel);
+@@ -1954,11 +1956,11 @@ export default function ChatView(props: ChatViewProps) {
+     onDiffPanelOpen,
+   });
    useEffect(() => {
 -    if (!canMaximizeRightPanel) return;
 +    if (!rightPanelOpen) return;
@@ -71,13 +79,19 @@ index da367a88d0..7ffece8890 100644
      }
 -  }, [canMaximizeRightPanel, routeThreadRef]);
 +  }, [rightPanelOpen, routeThreadRef]);
-   const toggleRightPanelMaximized = () => {
--    if (!canMaximizeRightPanel || !activeThreadRef) return;
-+    if (!rightPanelOpen || !activeThreadRef) return;
-     useRightPanelStore.getState().setMaximized(activeThreadRef, !rightPanelMaximized);
-   };
-   const toggleRightPanelMaximizedStable = useStableCallback(toggleRightPanelMaximized);
-@@ -7193,7 +7194,13 @@ export default function ChatView(props: ChatViewProps) {
+   const {
+     closeSurface: closeRightPanelSurface,
+     closeOtherSurfaces: closeOtherRightPanelSurfacesStable,
+@@ -2420,7 +2422,7 @@ export default function ChatView(props: ChatViewProps) {
+     diffOpen,
+     previewPanelOpen,
+     rightPanelOpen,
+-    canMaximizeRightPanel,
++    canMaximizeRightPanel: rightPanelOpen,
+     rightPanelMaximized,
+     supportsPullRequests,
+     pullRequestsSurfaceAvailable,
+@@ -3842,7 +3844,13 @@ export default function ChatView(props: ChatViewProps) {
            maximized={rightPanelMaximized}
            layoutControls={
              rightPanelOpen ? (
