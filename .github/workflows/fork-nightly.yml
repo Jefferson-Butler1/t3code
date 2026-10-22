@@ -168,7 +168,8 @@ jobs:
   # lands it on fork-maintenance and runs the nightly once more without repair.
   repair:
     needs: nightly
-    if: failure() && github.repository == 'Jefferson-Butler1/t3code' && inputs.allow_repair != false
+    # Scheduled runs have no inputs, and `null != false` is false in expressions.
+    if: failure() && github.repository == 'Jefferson-Butler1/t3code' && (github.event_name == 'schedule' || inputs.allow_repair)
     runs-on: ubuntu-latest
     timeout-minutes: 150
     permissions:
