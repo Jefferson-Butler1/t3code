@@ -147,21 +147,23 @@ def app_pids(app, action='status'):
 
 
 def is_busy(database):
-    # Never open the live T3 database for writes. A missing/changed schema defers installation.
+    # Never open the live T3 database for writes. A missing/changed schema raises, so the
+    # status names the problem instead of waiting for idle forever.
     with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=2) as connection:
         connection.execute('PRAGMA query_only=ON')
+        # A run abandoned by a crash can stay "running"; one older than a day counts as stale.
         return bool(connection.execute('''
-            SELECT EXISTS(SELECT 1 FROM projection_thread_sessions
-                WHERE status IN ('starting', 'running') OR active_turn_id IS NOT NULL)
-            OR EXISTS(SELECT 1 FROM projection_turns
-                WHERE state = 'pending' AND turn_id IS NULL
-                  AND julianday(requested_at) > julianday('now', '-2 minutes'))
+            SELECT EXISTS(SELECT 1 FROM orchestration_v2_projection_runs
+                WHERE status IN ('preparing', 'queued', 'starting', 'running')
+                  AND julianday(requested_at) > julianday('now', '-1 day'))
         ''').fetchone()[0])
 
 
 def wait_until_quiet(app, data):
+    # Orchestration v2 keeps live state in statev2.sqlite; state.sqlite is frozen after migration.
+    database = data / 'statev2.sqlite'
     for attempt in range(3):
-        if app_pids(app) and is_busy(data / 'state.sqlite'):
+        if app_pids(app) and is_busy(database):
             return False
         if attempt < 2:
             time.sleep(5)

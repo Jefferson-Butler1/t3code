@@ -28,23 +28,20 @@ class UpdaterTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'checksum'):
                 updater.verify_digest(file, hashlib.sha256(b'expected').hexdigest())
 
-    def test_busy_uses_active_sessions_and_recent_requests_not_stale_pending(self):
+    def test_busy_uses_recent_unfinished_runs_not_stale_ones(self):
         with tempfile.TemporaryDirectory() as directory:
-            db = pathlib.Path(directory) / 'state.sqlite'
+            db = pathlib.Path(directory) / 'statev2.sqlite'
             with sqlite3.connect(db) as connection:
                 connection.executescript('''
-                    CREATE TABLE projection_thread_sessions (status TEXT, active_turn_id TEXT);
-                    CREATE TABLE projection_turns (state TEXT, turn_id TEXT, requested_at TEXT);
-                    INSERT INTO projection_thread_sessions VALUES ('ready', NULL);
-                    INSERT INTO projection_turns VALUES ('pending', NULL, '2000-01-01T00:00:00Z');
+                    CREATE TABLE orchestration_v2_projection_runs (status TEXT, requested_at TEXT);
+                    INSERT INTO orchestration_v2_projection_runs VALUES ('running', '2000-01-01T00:00:00Z');
+                    INSERT INTO orchestration_v2_projection_runs
+                        VALUES ('completed', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
                 ''')
             self.assertFalse(updater.is_busy(db))
             with sqlite3.connect(db) as connection:
-                connection.execute("UPDATE projection_thread_sessions SET status = 'running'")
-            self.assertTrue(updater.is_busy(db))
-            with sqlite3.connect(db) as connection:
-                connection.execute("UPDATE projection_thread_sessions SET status = 'ready'")
-                connection.execute("UPDATE projection_turns SET requested_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')")
+                connection.execute("""INSERT INTO orchestration_v2_projection_runs
+                    VALUES ('queued', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))""")
             self.assertTrue(updater.is_busy(db))
             with self.assertRaises(sqlite3.OperationalError):
                 updater.is_busy(pathlib.Path(directory) / 'missing.sqlite')
