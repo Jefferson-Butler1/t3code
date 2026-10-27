@@ -1,9 +1,9 @@
 # Jeff's maintained T3 fork
 
-This fork checks the latest **published upstream Nightly** at **09:17 UTC daily**. When upstream or the patch series changes, it applies the patches, runs typecheck and lint, and builds an Apple Silicon macOS DMG. A failed patch or build leaves the previous release available.
+This fork checks the latest **published upstream Nightly** every **20 minutes** and builds each new one once. When upstream or the patch series changes, it applies the patches, runs typecheck and lint, and builds an Apple Silicon macOS DMG. A failed patch or build leaves the previous release available.
 
 - **[Downloads](https://github.com/Jefferson-Butler1/t3code/releases):** successful patched Nightlies, checksums and source provenance.
-- **[Workflow](https://github.com/Jefferson-Butler1/t3code/actions/workflows/fork-nightly.yml):** daily runs; **Run workflow** also supports a forced rebuild.
+- **[Workflow](https://github.com/Jefferson-Butler1/t3code/actions/workflows/fork-nightly.yml):** polls every 20 minutes; **Run workflow** with force rebuilds, or retries an upstream nightly that already failed.
 - **`fork-maintenance` (default):** this automation and the small patch series. Edit this branch.
 - **`patched-nightly`:** generated application source, replayed onto the latest published upstream tag. Do not edit it directly; successful builds replace it using an explicit force-with-lease. Its `.fork-build.json` records the upstream tag, source commit, maintenance commit and patch disposition.
 
@@ -11,7 +11,7 @@ The upstream `main` branch is retained separately. Upstream's own release, deplo
 
 ## Patch lifecycle
 
-`series` lists patches in application order. Each file under `patches/` is an ordinary `git format-patch` mailbox. To change a patch, generate a replacement from a clean upstream checkout and update this branch. The daily job uses `git am --3way`; conflicts stop the build. If a patch applies exactly in reverse, it is already present upstream and is skipped without making a duplicate commit. Equivalent upstream implementations still need human review.
+`series` lists patches in application order. Each file under `patches/` is an ordinary `git format-patch` mailbox. To change a patch, generate a replacement from a clean upstream checkout and update this branch. The build uses `git am --3way`; conflicts stop the build. If a patch applies exactly in reverse, it is already present upstream and is skipped without making a duplicate commit. Equivalent upstream implementations still need human review.
 
 Upstream's v2 orchestrator ([#2829](https://github.com/pingdotgg/t3code/pull/2829)) rolls back the provider conversation before restoring files, so a rejected rewind no longer touches the workspace. The fork retired `checkpoint-revert-recovery.patch` for that reason.
 
@@ -46,7 +46,7 @@ Run on each Mac from this branch, as the logged-in desktop user:
 launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.jeff.t3-fork-updater.plist"
 ```
 
-This enrolls `/Applications/T3 Code (Nightly).app` and installs the updater under `~/Library/Application Support/T3 Fork Updater/`. It checks this fork's successful releases every 15 minutes and at login, so daily builds install once the Mac is awake, online, and idle. It does not wake the Mac or run before login. It verifies release checksums, stages and smoke-tests the downloaded app with temporary data, waits for agent turns to finish, requests a normal quit, and replaces the same application path. A running app is reopened; the initial installation also opens it. Later updates leave a closed app closed.
+This enrolls `/Applications/T3 Code (Nightly).app` and installs the updater under `~/Library/Application Support/T3 Fork Updater/`. It checks this fork's successful releases every 15 minutes and at login, so new builds install once the Mac is awake, online, and idle. It does not wake the Mac or run before login. It verifies release checksums, stages and smoke-tests the downloaded app with temporary data, waits for agent turns to finish, requests a normal quit, and replaces the same application path. A running app is reopened; the initial installation also opens it. Later updates leave a closed app closed.
 
 After reopening, the updater requires a fresh backend and the expected version from `/.well-known/t3/environment`. A failed start restores and restarts the previous app, and that release is not retried automatically. The last app remains available as a hidden sibling backup in `/Applications`. The live T3 database is only read to detect active work. Unknown database schemas defer updates; they do not bypass the idle guard. There is a small race between the final idle check and normal quit, so avoid starting a new turn while an installation is beginning.
 

@@ -1,8 +1,10 @@
 name: Fork Nightly
 
 on:
+  # Upstream publishes several nightlies a day and a fork gets no event for them,
+  # so poll. The cheap check job decides whether the macOS build runs.
   schedule:
-    - cron: "17 9 * * *"
+    - cron: "*/20 * * * *"
   workflow_dispatch:
     inputs:
       force:
@@ -22,8 +24,81 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  nightly:
+  # Builds once per upstream nightly and patch series. A pair that failed is not
+  # retried on the next poll, so a broken nightly can't rerun the repair every
+  # 20 minutes; use force to retry it.
+  check:
     if: github.repository == 'Jefferson-Butler1/t3code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+    steps:
+      - name: Compare upstream with the last build
+        id: inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          tag=$(gh api 'repos/pingdotgg/t3code/releases?per_page=100' --jq '
+            [.[] | select(.prerelease and (.draft | not)
+              and (.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-nightly\\.[0-9]{8}\\.[0-9]+$")))]
+            | max_by(.published_at) | .tag_name')
+          upstream=$(gh api "repos/pingdotgg/t3code/commits/$tag" --jq .sha)
+          control=$(gh api "repos/$GITHUB_REPOSITORY/commits/fork-maintenance" --jq .sha)
+          built=false
+          if manifest=$(gh api -H 'Accept: application/vnd.github.raw' \
+              "repos/$GITHUB_REPOSITORY/contents/.fork-build.json?ref=patched-nightly"); then
+            version=$(jq -r .version <<<"$manifest")
+            if [[ "$(jq -r .upstream_commit <<<"$manifest")" == "$upstream" \
+                && "$(jq -r .control_commit <<<"$manifest")" == "$control" ]] \
+                && gh release view "fork-v$version" --repo "$GITHUB_REPOSITORY" --json assets \
+                  --jq '.assets[].name' | grep -q -- '-arm64\.dmg$'; then
+              built=true
+            fi
+          fi
+          echo "Upstream $tag ($upstream), fork-maintenance $control, built=$built" >> "$GITHUB_STEP_SUMMARY"
+          echo "built=$built" >> "$GITHUB_OUTPUT"
+          echo "key=fork-attempt-$upstream-$control" >> "$GITHUB_OUTPUT"
+          echo "force=$FORCE" >> "$GITHUB_OUTPUT"
+
+      - name: Look for an earlier attempt
+        id: attempted
+        if: steps.inputs.outputs.built == 'false' && steps.inputs.outputs.force != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: attempt
+          key: ${{ steps.inputs.outputs.key }}
+          lookup-only: true
+
+      - name: Decide
+        id: decide
+        env:
+          BUILT: ${{ steps.inputs.outputs.built }}
+          FORCE: ${{ steps.inputs.outputs.force }}
+          ATTEMPTED: ${{ steps.attempted.outputs.cache-hit == 'true' }}
+        run: |
+          if [[ "$FORCE" == "true" ]]; then build=true
+          elif [[ "$BUILT" == "true" ]]; then build=false
+          elif [[ "$ATTEMPTED" == "true" ]]; then
+            build=false
+            echo "This upstream nightly and patch series were already attempted; run with force to retry." >> "$GITHUB_STEP_SUMMARY"
+          else build=true
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          mkdir -p attempt && touch attempt/marker
+
+      - name: Record this attempt
+        if: steps.decide.outputs.build == 'true' && steps.inputs.outputs.force != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: attempt
+          key: ${{ steps.inputs.outputs.key }}
+
+  nightly:
+    needs: check
+    if: needs.check.outputs.build == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     defaults:
@@ -169,7 +244,7 @@ jobs:
   repair:
     needs: nightly
     # Scheduled runs have no inputs, and `null != false` is false in expressions.
-    if: failure() && github.repository == 'Jefferson-Butler1/t3code' && (github.event_name == 'schedule' || inputs.allow_repair)
+    if: failure() && needs.nightly.result == 'failure' && (github.event_name == 'schedule' || inputs.allow_repair)
     runs-on: ubuntu-latest
     timeout-minutes: 150
     permissions:
