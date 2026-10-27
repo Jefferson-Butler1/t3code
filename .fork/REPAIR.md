@@ -38,12 +38,6 @@ Run all of these on the fully patched tree. All must pass. Paths are relative to
 - `vp fmt --check` on every file the series changes
 - `vp -C <app> test run <files>` for the test files next to every source file you edited during conflict resolution, with paths relative to that app.
 
-The server typecheck (`vp -C apps/server run typecheck`) has a known artifact. `home-agent.patch` adds enough WebSocket RPCs that the Effect checker reports TS377030 ("any in the requirements channel") in `src/server.ts` and `src/ws.test.ts` even when the types are correct. Those diagnostics can hide real missing-service errors in tests, so:
-
-- Any server error other than TS377030 in those two files must be fixed.
-- If upstream added a test that builds `layerWsRpc` or the MCP toolkit layers, make sure it provides `notHomeLayer` from `apps/server/src/home/HomeTestkit.ts`, as the existing tests do.
-- To see the masked errors, temporarily remove three Home RPCs (`WsHomeEnableRpc`, `WsHomeDisableRpc`, `WsHomeStartFreshRpc`) from the RPC group in `packages/contracts/src/rpc.ts` and their handlers in `apps/server/src/ws.ts`. Typecheck, then restore them.
-
 Finally, prove the series replays: apply every patch from `$CONTROL/.fork/patches` in `series` order to a fresh checkout of `$UPSTREAM_TAG` with plain `git am`. Confirm the result is the tree you checked.
 
 ## Boundaries

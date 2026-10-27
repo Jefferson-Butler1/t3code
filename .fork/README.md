@@ -19,9 +19,9 @@ Upstream thread links now resolve in any connected environment ([#21505](https:/
 
 `explicit-update-feed.patch` sets the build publisher to `null` unless explicitly configured. This prevents electron-builder from inferring an upstream update feed for an unsigned fork.
 
-`right-panel-maximize-any-width.patch` lets the thread's right panel (terminal, files, diff, browser) be maximized at any window width. Upstream hides the maximize control below 980px, where the panel opens as a sheet; a maximized panel now renders inline and fills the workspace.
+Upstream keeps the right panel's maximize control in narrow windows ([#25389](https://github.com/pingdotgg/t3code/pull/25389)), so the fork retired `right-panel-maximize-any-width.patch`.
 
-`home-agent.patch` carries upstream's open Home PR ([#15975](https://github.com/pingdotgg/t3code/pull/15975)): an opt-in agent thread (Settings → Home) that reads and drives threads on every machine the desktop app connects to. Other machines need this build too, since Home calls their `fleet.invoke`. Drop the patch once #15975 merges; until then, regenerate it from a clean checkout of the failing tag when upstream changes conflict.
+The fork no longer carries `home-agent.patch`, upstream's open Home PR ([#15975](https://github.com/pingdotgg/t3code/pull/15975)). It conflicted with most upstream changes; Home returns with upstream once #15975 merges.
 
 `inbox-order.patch` adds an Inbox order setting (web Settings → General, mobile Settings → Threads → Beta) for the Working section's time-ordered inbox. Oldest first lists threads by when each last needed you, longest-waiting on top, so the inbox works as a queue.
 
