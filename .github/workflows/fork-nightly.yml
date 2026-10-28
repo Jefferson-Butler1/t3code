@@ -355,8 +355,10 @@ jobs:
             echo "::error::A patch carries AI attribution."
             exit 1
           fi
-          git -C control worktree add --detach "$RUNNER_TEMP/verify" "$UPSTREAM_TAG"
-          cd "$RUNNER_TEMP/verify"
+          # A fresh directory: the repair agent may have used any path under RUNNER_TEMP.
+          verify=$(mktemp -d "$RUNNER_TEMP/verify.XXXXXX")
+          git -C control worktree add --detach "$verify" "$UPSTREAM_TAG"
+          cd "$verify"
           while read -r name; do
             [[ -z "$name" || "$name" == \#* ]] && continue
             git -c core.hooksPath=/dev/null am "$CONTROL/.fork/patches/$name"
