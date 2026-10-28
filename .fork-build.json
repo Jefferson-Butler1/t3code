@@ -1,0 +1,17 @@
+{
+  "upstream_tag": "v0.1.4-nightly.20261028.3824",
+  "upstream_commit": "eb751fa0730d6a51d56547cb7fcaf4822a7e0e3b",
+  "control_commit": "1873d2c030562b4e83022295cbf4408493f7bd94",
+  "version": "0.1.4-nightly.20261028.100072",
+  "patches": [
+    {
+      "patch": "explicit-update-feed.patch",
+      "status": "applied"
+    },
+    {
+      "patch": "inbox-order.patch",
+      "status": "applied"
+    }
+  ],
+  "workflow_source_commit": "36406776c467a222cef8f09efad4edb23aa2478b"
+}
