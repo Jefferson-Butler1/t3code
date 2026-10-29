@@ -283,7 +283,8 @@ def install_agent(source, state, app):
     plist.write_bytes(plistlib.dumps({
         'Label': LABEL,
         'ProgramArguments': ['/usr/bin/python3', str(state / 'update_macos.py'), '--state', str(state)],
-        'RunAtLoad': True, 'StartInterval': 900, 'ProcessType': 'Background',
+        # Background QoS throttles the smoke-tested server past its startup deadline.
+        'RunAtLoad': True, 'StartInterval': 900, 'ProcessType': 'Standard',
         'StandardOutPath': str(state / 'updater.log'), 'StandardErrorPath': str(state / 'updater-error.log'),
         'EnvironmentVariables': {'PATH': '/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin'},
     }))
