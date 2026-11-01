@@ -17,7 +17,7 @@ Upstream's v2 orchestrator ([#2829](https://github.com/pingdotgg/t3code/pull/282
 
 Upstream thread links now resolve in any connected environment ([#21505](https://github.com/pingdotgg/t3code/pull/21505)), so the fork retired `thread-links-any-environment.patch`.
 
-`explicit-update-feed.patch` sets the build publisher to `null` unless explicitly configured. This prevents electron-builder from inferring an upstream update feed for an unsigned fork.
+Upstream already defaults the desktop build's publisher to `null` unless an update repository is configured ([#19277](https://github.com/pingdotgg/t3code/pull/19277)), so the fork retired `explicit-update-feed.patch`.
 
 Upstream keeps the right panel's maximize control in narrow windows ([#25389](https://github.com/pingdotgg/t3code/pull/25389)), so the fork retired `right-panel-maximize-any-width.patch`.
 
