@@ -1,4 +1,4 @@
-From ec8b27dc2b71ea06953500e89eee7f1a08686c98 Mon Sep 17 00:00:00 2001
+From f805f7dd924680107b8ee7d07ca3231e104bea6c Mon Sep 17 00:00:00 2001
 From: Jefferson-Butler1 <jefferson.butler@icloud.com>
 Date: Thu, 15 Oct 2026 11:58:36 -0700
 Subject: [PATCH] feat(web,mobile): order the inbox oldest first
@@ -29,7 +29,7 @@ them oldest first, working the inbox as a queue.
  15 files changed, 175 insertions(+), 33 deletions(-)
 
 diff --git a/apps/mobile/src/features/home/HomeScreen.tsx b/apps/mobile/src/features/home/HomeScreen.tsx
-index 243e693d1b..4c2a3ab3c4 100644
+index 5ac49af24a..8b6d1c30a2 100644
 --- a/apps/mobile/src/features/home/HomeScreen.tsx
 +++ b/apps/mobile/src/features/home/HomeScreen.tsx
 @@ -422,6 +422,7 @@ export function HomeScreen(props: HomeScreenProps) {
@@ -49,10 +49,10 @@ index 243e693d1b..4c2a3ab3c4 100644
      settledShelfExpanded,
      selectedThreadKey,
 diff --git a/apps/mobile/src/features/settings/ThreadSettingsSections.tsx b/apps/mobile/src/features/settings/ThreadSettingsSections.tsx
-index 2e77d4d393..a68260dc36 100644
+index 244e2d1868..aca8ed59c0 100644
 --- a/apps/mobile/src/features/settings/ThreadSettingsSections.tsx
 +++ b/apps/mobile/src/features/settings/ThreadSettingsSections.tsx
-@@ -174,6 +174,8 @@ export function WorkingSectionSettings() {
+@@ -176,6 +176,8 @@ export function WorkingSectionSettings() {
    const preferences = useAtomValue(mobilePreferencesAtom);
    const workingShelfEnabled =
      AsyncResult.isSuccess(preferences) && preferences.value.workingShelfEnabled !== false;
@@ -61,7 +61,7 @@ index 2e77d4d393..a68260dc36 100644
  
    return (
      <View className="gap-3">
-@@ -184,11 +186,21 @@ export function WorkingSectionSettings() {
+@@ -186,11 +188,21 @@ export function WorkingSectionSettings() {
            value={workingShelfEnabled}
            onValueChange={(value) => savePreferences({ workingShelfEnabled: value })}
          />
@@ -191,7 +191,7 @@ index 4348908e53..f67490b993 100644
      snoozedShelfExpanded,
      workingShelfEnabled,
 diff --git a/apps/mobile/src/features/threads/useThreadListV2.ts b/apps/mobile/src/features/threads/useThreadListV2.ts
-index 2a6f3504e2..2914e5e4e9 100644
+index 1a0c67062f..52e20dd037 100644
 --- a/apps/mobile/src/features/threads/useThreadListV2.ts
 +++ b/apps/mobile/src/features/threads/useThreadListV2.ts
 @@ -1,5 +1,5 @@
@@ -201,7 +201,7 @@ index 2a6f3504e2..2914e5e4e9 100644
  import { useMemo, useSyncExternalStore } from "react";
  
  import { scopedProjectKey } from "../../lib/scopedEntities";
-@@ -51,6 +51,7 @@ export function useThreadListV2(input: {
+@@ -62,6 +62,7 @@ export function useThreadListV2(input: {
    readonly shelfPreferencesLoaded: boolean;
    readonly workingShelfEnabled: boolean;
    readonly workingShelfExpanded: boolean;
@@ -209,7 +209,7 @@ index 2a6f3504e2..2914e5e4e9 100644
    readonly snoozedShelfExpanded: boolean;
    readonly settledShelfExpanded: boolean;
    readonly selectedThreadKey: string | null;
-@@ -113,6 +114,7 @@ export function useThreadListV2(input: {
+@@ -123,6 +124,7 @@ export function useThreadListV2(input: {
      workingShelfEnabled,
      workingShelfExpanded: input.workingShelfExpanded,
      inboxReturnAt: inbox.returnedAt,
@@ -257,10 +257,10 @@ index 43ac75e185..fab95cc0f2 100644
      preferences.useLastProjectForNewThreads = parsed.useLastProjectForNewThreads;
    }
 diff --git a/apps/web/src/components/Sidebar.logic.test.ts b/apps/web/src/components/Sidebar.logic.test.ts
-index f6e66a1ac6..71f53211d3 100644
+index fde82414af..49032206ee 100644
 --- a/apps/web/src/components/Sidebar.logic.test.ts
 +++ b/apps/web/src/components/Sidebar.logic.test.ts
-@@ -1105,17 +1105,20 @@ describe("Working shelf (beta)", () => {
+@@ -1139,17 +1139,20 @@ describe("Working shelf (beta)", () => {
      });
  
      it("puts the thread that finished last on top, whatever its age", () => {
@@ -292,7 +292,7 @@ index f6e66a1ac6..71f53211d3 100644
        expect(sorted.map((entry) => entry.id)).toEqual(["old-finished-now", "reopened", "new"]);
      });
  
-@@ -1128,12 +1131,11 @@ describe("Working shelf (beta)", () => {
+@@ -1162,12 +1165,11 @@ describe("Working shelf (beta)", () => {
          createdAt: "2026-03-09T09:30:00.000Z",
          completedAt: "2026-03-09T11:00:00.000Z",
        });
@@ -310,25 +310,26 @@ index f6e66a1ac6..71f53211d3 100644
          ).map((entry) => entry.id),
        ).toEqual(["asks-approval", "finished"]);
 diff --git a/apps/web/src/components/Sidebar.tsx b/apps/web/src/components/Sidebar.tsx
-index e6f23149df..b4e5611484 100644
+index 4fa3f06e71..2dd5b0f7da 100644
 --- a/apps/web/src/components/Sidebar.tsx
 +++ b/apps/web/src/components/Sidebar.tsx
-@@ -1,5 +1,6 @@
+@@ -1,6 +1,7 @@
+ import { liveShellEnvironmentIdsAtom } from "../state/shell";
  import { attachSidebarTree, SIDEBAR_TREE_PROPS } from "../lib/sidebarTree";
  import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
 +import type { InboxSortOrder } from "@t3tools/contracts/settings";
  import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
  import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
  import {
-@@ -351,6 +352,7 @@ interface SidebarThreadPartitionInput {
-   readonly workingShelfEnabled: boolean;
+@@ -356,6 +357,7 @@ interface SidebarThreadPartitionInput {
    /** Boring mode: folders list active threads by the user's latest message. */
    readonly sortActiveBySend: boolean;
+   readonly disconnectedEnvironmentIds: ReadonlySet<EnvironmentId>;
 +  readonly inboxSortOrder: InboxSortOrder;
    // Snooze wakes, the queued-turn grace and the Working shelf's exit grace depend
    // on the clock, so the minute tick, the precise snooze-wake tick and the inbox
    // tracker's expiry version are inputs: a new key repartitions.
-@@ -373,8 +375,10 @@ function resolveDraggedOrders(input: {
+@@ -382,8 +384,10 @@ function resolveDraggedOrders(input: {
    readonly settledThreads: readonly EnvironmentThreadShell[];
    readonly activeThreads: readonly EnvironmentThreadShell[];
    readonly workingShelfEnabled: boolean;
@@ -340,7 +341,7 @@ index e6f23149df..b4e5611484 100644
    const thread = threadByKey.get(drag.activeKey);
    if (thread === undefined) return NO_DRAGGED_ORDERS;
    const others = (list: readonly EnvironmentThreadShell[]) =>
-@@ -387,6 +391,7 @@ function resolveDraggedOrders(input: {
+@@ -396,6 +400,7 @@ function resolveDraggedOrders(input: {
      activeOrder: workingShelfEnabled
        ? sortInboxThreadsByReturn(
            [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
@@ -348,23 +349,23 @@ index e6f23149df..b4e5611484 100644
            inboxReturns.returnedAt,
          ).map(threadShellKey)
        : undefined,
-@@ -432,6 +437,7 @@ function useSidebarThreads(input: {
-   // Folders already separate the work, so boring mode has no Working shelf.
-   const workingShelfEnabled =
-     useClientSettings((s) => s.sidebarWorkingShelfEnabled) && folderGroups === null;
+@@ -453,6 +458,7 @@ function useSidebarThreads(input: {
+       )
+       .map((environment) => environment.environmentId),
+   );
 +  const inboxSortOrder = useClientSettings((s) => s.sidebarInboxSortOrder);
    const inboxReturnsVersion = useSyncExternalStore(
      inboxReturns.subscribe,
      inboxReturns.getSnapshot,
-@@ -476,6 +482,7 @@ function useSidebarThreads(input: {
-     optimisticDrop,
+@@ -498,6 +504,7 @@ function useSidebarThreads(input: {
      workingShelfEnabled,
      sortActiveBySend: folderGroups !== null,
+     disconnectedEnvironmentIds,
 +    inboxSortOrder,
      clockKey: `${nowMinute}:${snoozeWakeClock}:${inboxReturnsVersion}`,
    });
  
-@@ -556,6 +563,7 @@ function useSidebarThreads(input: {
+@@ -578,6 +585,7 @@ function useSidebarThreads(input: {
      ...partition,
      threads,
      workingShelfEnabled,
@@ -372,15 +373,15 @@ index e6f23149df..b4e5611484 100644
      searchableThreads: [
        ...pinnedThreads,
        ...activeThreads,
-@@ -611,6 +619,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
-     optimisticDrop,
+@@ -634,6 +642,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
      workingShelfEnabled,
      sortActiveBySend,
+     disconnectedEnvironmentIds,
 +    inboxSortOrder,
    } = input;
    const preciseNow = new Date().toISOString();
    const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, delegatedUnderParent);
-@@ -671,7 +680,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
+@@ -697,7 +706,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
    const sortedActive = sortActiveBySend
      ? sortWorkingThreadsBySend(active)
      : workingShelfEnabled
@@ -389,7 +390,7 @@ index e6f23149df..b4e5611484 100644
        : sortThreadsForSidebar(active);
    return {
      pinnedThreads:
-@@ -1279,6 +1288,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
+@@ -1308,6 +1317,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
  
    const {
      workingShelfEnabled,
@@ -397,7 +398,7 @@ index e6f23149df..b4e5611484 100644
      pinnedThreads,
      draggableThreadKeys,
      activeReorderableThreadKeys,
-@@ -1993,6 +2003,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
+@@ -2029,6 +2039,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
            settledThreads,
            activeThreads,
            workingShelfEnabled,
@@ -406,7 +407,7 @@ index e6f23149df..b4e5611484 100644
    const sidebarSortingStrategy = createSidebarSortingStrategy({
      items: sidebarListItems,
 diff --git a/apps/web/src/components/settings/SettingsPanels.tsx b/apps/web/src/components/settings/SettingsPanels.tsx
-index dca3eabc86..cbce2b603c 100644
+index 91cb8d6613..8abba98bab 100644
 --- a/apps/web/src/components/settings/SettingsPanels.tsx
 +++ b/apps/web/src/components/settings/SettingsPanels.tsx
 @@ -15,6 +15,7 @@ import {
@@ -506,10 +507,10 @@ index dca3eabc86..cbce2b603c 100644
  
        <SettingsSection id="confirmations" title="Confirmations">
 diff --git a/apps/web/src/components/settings/settingsSearch.ts b/apps/web/src/components/settings/settingsSearch.ts
-index aabfd0300e..b2968c4da7 100644
+index dda759f860..42378cd6d1 100644
 --- a/apps/web/src/components/settings/settingsSearch.ts
 +++ b/apps/web/src/components/settings/settingsSearch.ts
-@@ -443,6 +443,12 @@ export const SETTINGS_SEARCH_ITEMS = [
+@@ -451,6 +451,12 @@ export const SETTINGS_SEARCH_ITEMS = [
      to: "/settings/general",
      searchTerms: ["hide fold running monitoring threads inbox sidebar shelf"],
    },
