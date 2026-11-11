@@ -1,0 +1,13 @@
+{
+  "upstream_tag": "v0.1.9-nightly.20261111.4501",
+  "upstream_commit": "c90b67859a6d85fc957f9ffe25ba95113c6479d3",
+  "control_commit": "28162db807c336c864fdfadd69d1098b5b72524e",
+  "version": "0.1.9-nightly.20261111.100134",
+  "patches": [
+    {
+      "patch": "inbox-order.patch",
+      "status": "applied"
+    }
+  ],
+  "workflow_source_commit": "246dd49cc265a48bc9501047a8fa2c8531dde73b"
+}
